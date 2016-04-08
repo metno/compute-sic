@@ -2,6 +2,8 @@
 ''' Read coeffPDF_daytime_mean-std-line_v2p01.txt into a usable format.'''
 
 import os
+import h5py
+import argparse
 
 import numpy as np
 import numpy.ma as ma
@@ -13,7 +15,7 @@ from pylab import *
 from scipy import stats
 from pyresample import kd_tree
 
-from gactools.avhrr import AvhrrData, AngleData
+# from gactools.avhrr import AvhrrData, AngleData
 import netCDF4
 import datetime
 
@@ -179,17 +181,35 @@ def compose_filename(data):
 
 
 def main():
+
+    p = argparse.ArgumentParser()
+    p.add_argument("-o", "--output-dir", default='.', nargs=1)
+    p.add_argument('-a', '--coeffs', nargs=1,
+                         help='Name of the area definition',
+                         type=str)
+    p.add_argument("-i", "--input-file", nargs=1,
+                         help="Input Mitiff Files")
+
+    # p.add_argument("-s", "--satellite_name")
+    # p.add_argument('-b', '--channels', nargs='+',
+    #                      help='Input channels',
+    #                      type=str)
+    args = p.parse_args()
+
+
+
     ''' Test wic-classifier in python.'''
 
     # Read in test coefficients file for daytime
     # coeffs_filename = 'coeffPDF_daytime_mean-std-line_v2p1.txt'
-    coeffs_filename = sys.argv[1] # "./coeffPDF_daytime_mean-std-line_v2p2-misha.txt"
+    coeffs_filename = args.input_file # "./coeffPDF_daytime_mean-std-line_v2p2-misha.txt"
     coeffs = read_coeffs_from_file(coeffs_filename)
 
     # reduce coefficients to just the ones needed for this sensor
     coeffs = coeffs[np.logical_and(coeffs['sensor']=='avhrr_metop02',coeffs['datatype']=='gac')]
 
     # Read in test AVHRR swath file, with lat/lon info (for trimming)
+    avhrr_filename = args.input_file
     avhrr = AvhrrData(avhrr_filename, locations=True)
 
     angles_filename = avhrr_filename.replace('avhrr', 'sunsatangles')
@@ -241,8 +261,9 @@ def main():
 
 
     sic_filename = compose_filename(avhrr)
+    output_path = os.path.join(output_dir, sic_filename)
 
-    save_sic(sic_filename, 
+    save_sic(sic_filename,
                  sic_res,
                  pice_res,
                  pwater_res,
@@ -474,6 +495,83 @@ def lognormalpdf(x, mu, sigma):
     C = x*sigma*math.sqrt(2.0*math.pi)
     gpdf = 1.0*e/C
     return(gpdf)
+
+
+
+import numpy as np
+import h5py
+
+# AVHRR code by Cristina Luis
+
+# TODO: easily named access for each channel
+# TODO: check out pypps to share ideas
+# TODO: return appropriate type based on filename (one base class?)
+
+class AvhrrData(object):
+    """ Container for AVHRR GAC swath data. 
+
+    Channels accessed by: data[ch], where ch are [_, A1, A2, T3, T4, T5, A3]
+    """
+
+    pre = ['pass', 'A1', 'A2', 'T3', 'T4', 'T5', 'A3']
+
+    def __init__(self, filename, locations=False):
+        """ Read in AVHRR data file in HDF5 format and cleans it up for ready use."""
+
+        avhrr = h5py.File(filename, 'r')
+        self.data, self.nodata, self.missingdata = [[None]*7 for i in range(3)]
+
+        # Collect data from all channels to data[ch], including gain and offset on 
+        # all valid values.
+        for ch in range(1,7):
+            image = 'image' + str(ch)
+            self.data[ch] = np.float32(avhrr[image]['data'].value)
+            offset = avhrr[image]['what'].attrs['offset'] # To check for K?
+            gain = avhrr[image]['what'].attrs['gain']
+            self.nodata[ch] = avhrr[image]['what'].attrs['nodata']
+            self.missingdata[ch] = avhrr[image]['what'].attrs['missingdata']
+
+            mask = (self.data[ch] != self.missingdata[ch]) & (self.data[ch] != self.nodata[ch])
+            self.data[ch][mask] = self.data[ch][mask] * gain + offset
+
+        if locations:
+            lat = avhrr['where']['lat']['data'].value 
+            lon = avhrr['where']['lon']['data'].value
+
+            gain = avhrr['where']['lat']['what'].attrs['gain']
+
+            self.lat = lat * gain
+            self.lon = lon * gain
+            
+        avhrr.close()
+
+
+class AngleData(object):
+    """ Read in AVHRR angles file in HDF5 format and clean it up for ready use."""
+    pre = ['pass', 'soz', 'saz', 'pass', 'azu', 'aza']
+
+    def __init__(self, filename):
+        angles = h5py.File(filename, 'r')
+        self.data, self.nodata, self.missingdata = [[None]*6 for i in range(3)]
+        for ch in range(1,6):
+            image = 'image{}'.format(ch)
+            self.data[ch] = np.float32(angles[image]['data'].value)
+            offset = angles[image]['what'].attrs['offset']  # For K check?
+            gain = angles[image]['what'].attrs['gain']
+            self.nodata[ch] = angles[image]['what'].attrs['nodata']
+            self.missingdata[ch] = angles[image]['what'].attrs['missingdata']
+            
+            mask = (self.data[ch] != self.missingdata[ch]) & (self.data[ch] != self.nodata[ch])
+            self.data[ch][mask] = self.data[ch][mask] * gain + offset
+
+        angles.close()
+
+    def describe(self):
+        print '''image 1: sun zenith angle. \n
+                image 2: satellite zenith angle. \n
+                image 3: relative sun-satellite azimuth difference angle \n
+                image 4: absolute sun azimuth angle \n
+                image 5: absolute satellite azimuth angle \n'''
 
 if __name__ == '__main__':
     main()
