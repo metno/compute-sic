@@ -184,7 +184,7 @@ def main():
 
     p = argparse.ArgumentParser()
     p.add_argument("-o", "--output-dir", default='.', nargs=1)
-    p.add_argument('-a', '--coeffs', nargs=1,
+    p.add_argument('-c', '--coeffs', nargs=1,
                          help='Name of the area definition',
                          type=str)
     p.add_argument("-i", "--input-file", nargs=1,
@@ -202,14 +202,14 @@ def main():
 
     # Read in test coefficients file for daytime
     # coeffs_filename = 'coeffPDF_daytime_mean-std-line_v2p1.txt'
-    coeffs_filename = args.input_file # "./coeffPDF_daytime_mean-std-line_v2p2-misha.txt"
+    coeffs_filename = args.coeffs[0] # "./coeffPDF_daytime_mean-std-line_v2p2-misha.txt"
     coeffs = read_coeffs_from_file(coeffs_filename)
 
     # reduce coefficients to just the ones needed for this sensor
     coeffs = coeffs[np.logical_and(coeffs['sensor']=='avhrr_metop02',coeffs['datatype']=='gac')]
 
     # Read in test AVHRR swath file, with lat/lon info (for trimming)
-    avhrr_filename = args.input_file
+    avhrr_filename = args.input_file[0]
     avhrr = AvhrrData(avhrr_filename, locations=True)
 
     angles_filename = avhrr_filename.replace('avhrr', 'sunsatangles')
@@ -217,8 +217,8 @@ def main():
 
     pigobs, pcgobs, pwgobs = calc_wic_prob_day_twi(coeffs, avhrr, angles)
 
-    #sic = compute_sic(avhrr.data[1], pigobs, pwgobs, pcgobs, avhrr.lon, avhrr.lat)
-    sic = compute_sic(avhrr.data[2]/avhrr.data[1], pigobs, pwgobs, pcgobs, avhrr.lon, avhrr.lat)
+    sic = compute_sic(avhrr.data[1], pigobs, pwgobs, pcgobs, avhrr.lon, avhrr.lat)
+    # sic = compute_sic(avhrr.data[2]/avhrr.data[1], pigobs, pwgobs, pcgobs, avhrr.lon, avhrr.lat)
 
     swath_def = pr.geometry.SwathDefinition(lons=avhrr.lon, lats=avhrr.lat)
     area_def = pr.utils.load_area('./areas.cfg', 'nsidc_stere_north_10k')
@@ -261,7 +261,7 @@ def main():
 
 
     sic_filename = compose_filename(avhrr)
-    output_path = os.path.join(output_dir, sic_filename)
+    output_path = os.path.join(args.output_dir[0], sic_filename)
 
     save_sic(sic_filename,
                  sic_res,
@@ -497,10 +497,6 @@ def lognormalpdf(x, mu, sigma):
     return(gpdf)
 
 
-
-import numpy as np
-import h5py
-
 # AVHRR code by Cristina Luis
 
 # TODO: easily named access for each channel
@@ -518,8 +514,11 @@ class AvhrrData(object):
     def __init__(self, filename, locations=False):
         """ Read in AVHRR data file in HDF5 format and cleans it up for ready use."""
 
-        avhrr = h5py.File(filename, 'r')
+        self._filehandle = h5py.File(filename, 'r')
+        avhrr = self._filehandle
         self.data, self.nodata, self.missingdata = [[None]*7 for i in range(3)]
+
+        self._get_timestamp()
 
         # Collect data from all channels to data[ch], including gain and offset on 
         # all valid values.
@@ -542,8 +541,17 @@ class AvhrrData(object):
 
             self.lat = lat * gain
             self.lon = lon * gain
-            
-        avhrr.close()
+
+        # avhrr.close()
+
+
+    def _get_timestamp(self):
+        """
+        """
+        start_epoch = self._filehandle['how'].attrs['startepochs']
+
+        timestamp = datetime.datetime.utcfromtimestamp(float(start_epoch)) 
+        self.timestamp = timestamp
 
 
 class AngleData(object):
