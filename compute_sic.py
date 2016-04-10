@@ -8,10 +8,11 @@ import argparse
 import numpy as np
 import numpy.ma as ma
 import pyresample as pr
+from pylab import *
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import sys
-from pylab import *
 from scipy import stats
 from pyresample import kd_tree
 
@@ -20,7 +21,6 @@ import netCDF4
 import datetime
 
 from matplotlib import mlab
-matplotlib.use('Agg')
 
 
 # basedir = '.'
