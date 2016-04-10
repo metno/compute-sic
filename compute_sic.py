@@ -20,6 +20,7 @@ import netCDF4
 import datetime
 
 from matplotlib import mlab
+matplotlib.use('Agg')
 
 
 # basedir = '.'
