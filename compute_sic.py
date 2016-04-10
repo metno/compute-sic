@@ -9,6 +9,7 @@ import numpy as np
 import numpy.ma as ma
 import pyresample as pr
 # from pylab import *
+import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
