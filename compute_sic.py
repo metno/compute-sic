@@ -213,11 +213,14 @@ def main():
     coeffs = coeffs[np.logical_and(coeffs['sensor']==sensor_name, coeffs['datatype']=='gac')]
 
     # Read in test AVHRR swath file, with lat/lon info (for trimming)
-    avhrr_filename = args.input_file[0]
-    avhrr = AvhrrData(avhrr_filename, locations=True)
+    avhrr_filepath = args.input_file[0]
+    avhrr_dirpath = os.path.dirname(avhrr_filepath)
+    avhrr_basename = os.path.basename(avhrr_filepath)
+    avhrr = AvhrrData(avhrr_filepath, locations=True)
 
-    angles_filename = avhrr_filename.replace('avhrr', 'sunsatangles')
-    angles = AngleData(angles_filename)
+    angles_basename = avhrr_basename.replace('avhrr', 'sunsatangles')
+    angles_filepath = os.path.join(avhrr_dirpath, angles_basename)
+    angles = AngleData(angles_filepath)
 
     pigobs, pcgobs, pwgobs = calc_wic_prob_day_twi(coeffs, avhrr, angles)
 
