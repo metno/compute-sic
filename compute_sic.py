@@ -8,7 +8,7 @@ import argparse
 import numpy as np
 import numpy.ma as ma
 import pyresample as pr
-from pylab import *
+# from pylab import *
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
@@ -57,36 +57,36 @@ def compute_sic( data, pice, pwater, pclouds, lons, lats ):
 
     xspace = np.arange(xmin,xmax,1000)
 
-    ice_mask = ( pice > 0.95 ) * ( lats > 60 )
-    water_mask = ( pwater > 0.95  ) * (lats > 60)
+    # ice_mask = ( pice > 0.95 ) * ( lats > 60 )
+    # water_mask = ( pwater > 0.95  ) * (lats > 60)
 
-    # ice_mask = (pice > pwater) * (lats>60)
-    # water_mask = (pwater>pice) * (lats>60)
+    # # ice_mask = (pice > pwater) * (lats>60)
+    # # water_mask = (pwater>pice) * (lats>60)
 
-    ice_data = np.ma.array(data, mask = ~ice_mask)
-    water_data = np.ma.array(data, mask = ~water_mask)
+    # ice_data = np.ma.array(data, mask = ~ice_mask)
+    # water_data = np.ma.array(data, mask = ~water_mask)
 
-    ni, binsi, patchesi = plt.hist(ice_data.compressed(), 20, normed=1, alpha = 0.5, facecolor='blue')
-    nw, binsw, patchesw = plt.hist(water_data.compressed(),20, normed=1, alpha = 0.5, facecolor='green')
+    # ni, binsi, patchesi = plt.hist(ice_data.compressed(), 20, normed=1, alpha = 0.5, facecolor='blue')
+    # nw, binsw, patchesw = plt.hist(water_data.compressed(),20, normed=1, alpha = 0.5, facecolor='green')
 
-    (mu_ice, sigma_ice) = stats.norm.fit(ice_data.compressed())
-    y_ice = mlab.normpdf(binsi, mu_ice, sigma_ice)
-    plt.plot(binsi, y_ice, 'r--')
+    # (mu_ice, sigma_ice) = stats.norm.fit(ice_data.compressed())
+    # y_ice = mlab.normpdf(binsi, mu_ice, sigma_ice)
+    # # plt.plot(binsi, y_ice, 'r--')
 
-    (mu_water, sigma_water) = stats.norm.fit(water_data.compressed())
-    y_water = mlab.normpdf(binsw, mu_water, sigma_water)
-    plt.plot(binsw, y_water, 'g--')
+    # (mu_water, sigma_water) = stats.norm.fit(water_data.compressed())
+    # y_water = mlab.normpdf(binsw, mu_water, sigma_water)
+    # # plt.plot(binsw, y_water, 'g--')
 
-    ab,bb,cb,db = stats.beta.fit(water_data.compressed())
-    pdf_beta = stats.beta.pdf(binsw, ab, bb,cb, db)
-    plt.plot(binsw, pdf_beta, 'y--')
+    # ab,bb,cb,db = stats.beta.fit(water_data.compressed())
+    # pdf_beta = stats.beta.pdf(binsw, ab, bb,cb, db)
+    # # plt.plot(binsw, pdf_beta, 'y--')
 
-    intersection = solve(mu_ice, mu_water, sigma_ice, sigma_water)
-    plt.plot(intersection, mlab.normpdf(intersection, mu_ice, sigma_ice), 'ro')
+    # intersection = solve(mu_ice, mu_water, sigma_ice, sigma_water)
+    # # plt.plot(intersection, mlab.normpdf(intersection, mu_ice, sigma_ice), 'ro')
 
-    plt.savefig('dist.png')
+    # # plt.savefig('dist.png')
 
-    print "INTERSECTION: ", intersection
+    # print "INTERSECTION: ", intersection
 
     ice_mask = pice <= 0.99
     water_mask = pwater <= 0.99
