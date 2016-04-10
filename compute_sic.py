@@ -22,11 +22,11 @@ import datetime
 from matplotlib import mlab
 
 
-basedir = '.'
-filename = sys.argv[2] #"metop02_20080701_0914_99999_satproj_00000_12116_avhrr.h5"
-avhrr_filename = os.path.join(basedir, filename)
-
-outdir = 'figures/'
+# basedir = '.'
+# filename = sys.argv[2] #"metop02_20080701_0914_99999_satproj_00000_12116_avhrr.h5"
+# avhrr_filename = os.path.join(basedir, filename)
+# 
+# outdir = 'figures/'
 
 def solve(m1,m2,std1,std2):
   a = 1/(2*std1**2) - 1/(2*std2**2)
@@ -189,6 +189,8 @@ def main():
                          type=str)
     p.add_argument("-i", "--input-file", nargs=1,
                          help="Input Mitiff Files")
+    p.add_argument("-a", "--areas_file", nargs=1,
+                         help="Areas definition file")
     p.add_argument('-s', '--sensor', nargs=1,
                          help='Name of the sensor, e.g. avhrr_metop02',
                          type=str)
@@ -200,6 +202,7 @@ def main():
     args = p.parse_args()
 
 
+    areas_filepath = args.areas_file[0]
 
     ''' Test wic-classifier in python.'''
 
@@ -228,7 +231,7 @@ def main():
     # sic = compute_sic(avhrr.data[2]/avhrr.data[1], pigobs, pwgobs, pcgobs, avhrr.lon, avhrr.lat)
 
     swath_def = pr.geometry.SwathDefinition(lons=avhrr.lon, lats=avhrr.lat)
-    area_def = pr.utils.load_area('./areas.cfg', 'nsidc_stere_north_10k')
+    area_def = pr.utils.load_area(areas_filepath, 'nsidc_stere_north_10k')
 
     valid_input_index, valid_output_index, index_array, distance_array = \
                             kd_tree.get_neighbour_info(swath_def,
