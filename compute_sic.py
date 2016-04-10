@@ -95,18 +95,18 @@ def compute_sic( data, pice, pwater, pclouds, lons, lats ):
     only_ice_mask = (pice > pwater) * (pice > pclouds) * (lats > 60)
     only_ice_data = ma.array(data, mask = ~only_ice_mask)
 
-    ice_data = ma.array(data, mask = (ice_mask * lats_mask) == false)
-    ice_hist = np.histogram(ice_data[ice_data.mask == false], 20)
+    ice_data = ma.array(data, mask = (ice_mask * lats_mask) == False)
+    ice_hist = np.histogram(ice_data[ice_data.mask == False], 20)
     ice_max = np.mean(ice_hist[1])
 
-    water_data = ma.array(data, mask = (water_mask * lats_mask) == false)
-    water_hist = np.histogram(water_data[water_data.mask == false], 20)
+    water_data = ma.array(data, mask = (water_mask * lats_mask) == False)
+    water_hist = np.histogram(water_data[water_data.mask == False], 20)
     water_max = np.min(water_hist[1])
 
     print "MAX: {}, {}".format( ice_data.max(), water_data.max())
 
     only_ice_mask = (pice > pwater) * (pice > pclouds) * (lats > 65)
-    only_ice_data = ma.array(data, mask = only_ice_mask == false)
+    only_ice_data = ma.array(data, mask = only_ice_mask == False)
 
     # compute regression coefficients
     slope, intercept, r_value, p_value, std_err = stats.linregress((water_max, 20), (0, 100))
