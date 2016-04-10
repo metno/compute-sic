@@ -284,7 +284,7 @@ def main():
     sic_filename = compose_filename(avhrr)
     output_path = os.path.join(args.output_dir[0], sic_filename)
 
-    save_sic(sic_filename,
+    save_sic(output_path,
                  sic_res,
                  pice_res,
                  pwater_res,
