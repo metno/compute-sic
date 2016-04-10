@@ -91,20 +91,29 @@ def compute_sic( data, pice, pwater, pclouds, lons, lats ):
     water_mask = pwater <= 0.99
     lats_mask = lats < 60
 
-    print "MAX: {}, {}".format( ice_data.max(), water_data.max())
 
     only_ice_mask = (pice > pwater) * (pice > pclouds) * (lats > 60)
     only_ice_data = ma.array(data, mask = ~only_ice_mask)
 
+    ice_data = ma.array(data, mask = (ice_mask * lats_mask) == false)
+    ice_hist = np.histogram(ice_data[ice_data.mask == false], 20)
+    ice_max = np.mean(ice_hist[1])
+
+    water_data = ma.array(data, mask = (water_mask * lats_mask) == false)
+    water_hist = np.histogram(water_data[water_data.mask == false], 20)
+    water_max = np.min(water_hist[1])
+
+    print "MAX: {}, {}".format( ice_data.max(), water_data.max())
+
+    only_ice_mask = (pice > pwater) * (pice > pclouds) * (lats > 65)
+    only_ice_data = ma.array(data, mask = only_ice_mask == false)
 
     # compute regression coefficients
-    slope, intercept, r_value, p_value, std_err = stats.linregress((0.3, 0.7), (0, 100))
-    # slope, intercept, r_value, p_value, std_err = stats.linregress((water_max, ice_max), (0, 100))
+    slope, intercept, r_value, p_value, std_err = stats.linregress((water_max, 20), (0, 100))
     sic = slope * only_ice_data + intercept
 
     sic = np.where(sic>100, 100, sic)
     sic = np.where(sic<0, 0, sic)
-    # import ipdb; ipdb.set_trace()
 
     return sic
 
