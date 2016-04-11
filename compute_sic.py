@@ -335,10 +335,16 @@ def calc_wic_prob_day_twi(coeffs, avhrr, angles):
     useT37    = np.invert(useA16) * (T37 > 50.0)
     useT37   *= (T37 < 400.0) * (T11 > 50.0)
     useT37   *= (T11 < 400.0) * (SOZ > 0.0) * (SOZ < 90.0)    
+    useA16  = np.array([False]) #$  = (A16 > 0.00001) * (A16 <= 100.0)
+    useT37  = np.array([False]) #  = np.invert(useA16) * (T37 > 50.0)
 
     # Combine the input variables to the features to be used
     A0906 = (A09 / A06)
-    A1606 = (A16 / A06) 
+    try:
+        A1606 = (A16 / A06) 
+    except:
+        pass
+   
     T3711 = (T37-T11)
     
     # Estimate the probability of getting the observed A09/A06 and A16/A06 or T37-T11
@@ -543,7 +549,7 @@ class AvhrrData(object):
 
         # Collect data from all channels to data[ch], including gain and offset on 
         # all valid values.
-        for ch in range(1,7):
+        for ch in range(1,6):
             image = 'image' + str(ch)
             self.data[ch] = np.float32(avhrr[image]['data'].value)
             offset = avhrr[image]['what'].attrs['offset'] # To check for K?
