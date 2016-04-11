@@ -134,7 +134,11 @@ def save_sic(output_filename, sic, pice, pwater, pclouds, a06, a09, timestamp, l
     filehandle.variables['lon'].units = 'degrees_east'
     filehandle.variables['lat'].units = 'degrees_north'
     filehandle.variables['lon'][:] = lon
-    filehandle.variables['lon'][:] = lat
+    filehandle.variables['lat'][:] = lat
+    filehandle.variables['lon'].missing_value = -32767
+    filehandle.variables['lon'].fill_value = -32767
+    filehandle.variables['lat'].missing_value = -32767
+    filehandle.variables['lat'].fill_value = -32767
 
 
     filehandle.createVariable('avhrr_iceconc', 'f4', dimensions=('time', 'x', 'y'))
@@ -284,6 +288,7 @@ def main():
     sic_filename = compose_filename(avhrr)
     output_path = os.path.join(args.output_dir[0], sic_filename)
 
+    (area_def.lons, area_def.lats) = area_def.get_lonlats()
     save_sic(output_path,
                  sic_res,
                  pice_res,
