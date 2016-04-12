@@ -1,5 +1,12 @@
 #!/usr/bin/env python
-''' Read coeffPDF_daytime_mean-std-line_v2p01.txt into a usable format.'''
+'''
+Classify AVHRR GAC data surface types and compute sea ice concentration
+
+Surface classification code written by Steinar Eastwood, FoU
+Avhrr reading routine - part of `gactools` written by Cristina Luis, FoU
+
+
+'''
 
 import os
 import h5py
@@ -8,27 +15,19 @@ import argparse
 import numpy as np
 import numpy.ma as ma
 import pyresample as pr
-# from pylab import *
 import matplotlib
 matplotlib.use('Agg')
+
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import sys
 from scipy import stats
 from pyresample import kd_tree
 
-# from gactools.avhrr import AvhrrData, AngleData
 import netCDF4
 import datetime
 
 from matplotlib import mlab
-
-
-# basedir = '.'
-# filename = sys.argv[2] #"metop02_20080701_0914_99999_satproj_00000_12116_avhrr.h5"
-# avhrr_filename = os.path.join(basedir, filename)
-# 
-# outdir = 'figures/'
 
 def solve(m1,m2,std1,std2):
   a = 1/(2*std1**2) - 1/(2*std2**2)
@@ -51,7 +50,6 @@ def compute_sic( data, pice, pwater, pclouds, lons, lats ):
     returns:
         sic (numpy.ndarray):    array with sea ice concentration values
     """
-
 
     xmin = 0
     xmax = 2
@@ -119,6 +117,16 @@ def compute_sic( data, pice, pwater, pclouds, lons, lats ):
 
     return sic
 
+def get_osisaf_land_mask(filepath):
+    """
+    Load a OSI SAF landmask using numpy.load
+    args:
+        filepath (str) : path to file
+    """
+    data = np.load(filepath)
+    land_mask = data['land_mask']
+    return land_mask
+
 def save_sic(output_filename, sic, pice, pwater, pclouds, a06, a09, timestamp, lon, lat):
 
     filehandle = netCDF4.Dataset(output_filename, 'w')
@@ -140,51 +148,49 @@ def save_sic(output_filename, sic, pice, pwater, pclouds, a06, a09, timestamp, l
     filehandle.variables['lat'].missing_value = -32767
     filehandle.variables['lat'].fill_value = -32767
 
+    filehandle.createVariable('ice_conc', 'f4', dimensions=('time', 'x', 'y'))
+    filehandle.variables['ice_conc'].coordinates = "lon lat"
+    filehandle.variables['ice_conc'].units = "%"
+    filehandle.variables['ice_conc'].missing_value = -32767
+    filehandle.variables['ice_conc'].fill_value = -32767
+    filehandle.variables['ice_conc'][:] = sic
 
-    filehandle.createVariable('avhrr_iceconc', 'f4', dimensions=('time', 'x', 'y'))
-    filehandle.variables['avhrr_iceconc'].coordinates = "lon lat"
-    filehandle.variables['avhrr_iceconc'].units = "%"
-    filehandle.variables['avhrr_iceconc'].missing_value = -32767
-    filehandle.variables['avhrr_iceconc'].fill_value = -32767
+    # filehandle.createVariable('pice', 'f4', dimensions=('time', 'x', 'y'))
+    # filehandle.variables['pice'].coordinates = "lon lat"
+    # filehandle.variables['pice'].units = ""
+    # filehandle.variables['pice'].missing_value = -32767
+    # filehandle.variables['pice'].fill_value = -32767
 
+    # filehandle.createVariable('pwater', 'f4', dimensions=('time', 'x', 'y'))
+    # filehandle.variables['pwater'].coordinates = "lon lat"
+    # filehandle.variables['pwater'].units = ""
+    # filehandle.variables['pwater'].missing_value = -32767
+    # filehandle.variables['pwater'].fill_value = -32767
 
+    # filehandle.createVariable('pclouds', 'f4', dimensions=('time', 'x', 'y'))
+    # filehandle.variables['pclouds'].coordinates = "lon lat"
+    # filehandle.variables['pclouds'].units = ""
+    # filehandle.variables['pclouds'].missing_value = -32767
+    # filehandle.variables['pclouds'].fill_value = -32767
 
-    filehandle.createVariable('pice', 'f4', dimensions=('time', 'x', 'y'))
-    filehandle.variables['pice'].coordinates = "lon lat"
-    filehandle.variables['pice'].units = ""
-    filehandle.variables['pice'].missing_value = -32767
-    filehandle.variables['pice'].fill_value = -32767
+    # filehandle.createVariable('A06', 'f4', dimensions=('time', 'x', 'y'))
+    # filehandle.variables['A06'].coordinates = "lon lat"
+    # filehandle.variables['A06'].units = ""
+    # filehandle.variables['A06'].missing_value = -32767
+    # filehandle.variables['A06'].fill_value = -32767
 
-    filehandle.createVariable('pwater', 'f4', dimensions=('time', 'x', 'y'))
-    filehandle.variables['pwater'].coordinates = "lon lat"
-    filehandle.variables['pwater'].units = ""
-    filehandle.variables['pwater'].missing_value = -32767
-    filehandle.variables['pwater'].fill_value = -32767
+    # filehandle.createVariable('A09', 'f4', dimensions=('time', 'x', 'y'))
+    # filehandle.variables['A09'].coordinates = "lon lat"
+    # filehandle.variables['A09'].units = ""
+    # filehandle.variables['A09'].missing_value = -32767
+    # filehandle.variables['A09'].fill_value = -32767
 
-    filehandle.createVariable('pclouds', 'f4', dimensions=('time', 'x', 'y'))
-    filehandle.variables['pclouds'].coordinates = "lon lat"
-    filehandle.variables['pclouds'].units = ""
-    filehandle.variables['pclouds'].missing_value = -32767
-    filehandle.variables['pclouds'].fill_value = -32767
-
-    filehandle.createVariable('A06', 'f4', dimensions=('time', 'x', 'y'))
-    filehandle.variables['A06'].coordinates = "lon lat"
-    filehandle.variables['A06'].units = ""
-    filehandle.variables['A06'].missing_value = -32767
-    filehandle.variables['A06'].fill_value = -32767
-
-    filehandle.createVariable('A09', 'f4', dimensions=('time', 'x', 'y'))
-    filehandle.variables['A09'].coordinates = "lon lat"
-    filehandle.variables['A09'].units = ""
-    filehandle.variables['A09'].missing_value = -32767
-    filehandle.variables['A09'].fill_value = -32767
-
-    filehandle.variables['avhrr_iceconc'][:] = sic.astype('f4')
-    filehandle.variables['pice'][:] = pice.astype('f4')
-    filehandle.variables['pwater'][:] = pwater.astype('f4')
-    filehandle.variables['pclouds'][:] = pclouds.astype('f4')
-    filehandle.variables['A06'][:] = a06.astype('f4')
-    filehandle.variables['A09'][:] = a09.astype('f4')
+    # filehandle.variables['avhrr_iceconc'][:] = sic.astype('f4')
+    # filehandle.variables['pice'][:] = pice.astype('f4')
+    # filehandle.variables['pwater'][:] = pwater.astype('f4')
+    # filehandle.variables['pclouds'][:] = pclouds.astype('f4')
+    # filehandle.variables['A06'][:] = a06.astype('f4')
+    # filehandle.variables['A09'][:] = a09.astype('f4')
 
     filehandle.close()
 
@@ -194,6 +200,20 @@ def compose_filename(data):
     filename = 'avhrr_iceconc_{}_arctic.nc'.format(timestamp_string)
     return filename
 
+def apply_mask(mask_array, data_array):
+    """
+    Apply mask to data array
+
+    Args:
+        mask (numpy.ndarray) : boolean array
+        data (numpy.ma.ndarray) : numerical masked array
+
+    Returns:
+        masked_data_array (numpy.ma.ndarray) : masked array
+    """
+    masked_data_array = np.ma.array(data_array.data, mask = data_array.mask + mask_array)
+    return masked_data_array
+    
 
 def main():
 
@@ -215,8 +235,6 @@ def main():
     #                      help='Input channels',
     #                      type=str)
     args = p.parse_args()
-
-
     areas_filepath = args.areas_file[0]
 
     ''' Test wic-classifier in python.'''
@@ -243,7 +261,6 @@ def main():
     pigobs, pcgobs, pwgobs = calc_wic_prob_day_twi(coeffs, avhrr, angles)
 
     sic = compute_sic(avhrr.data[1], pigobs, pwgobs, pcgobs, avhrr.lon, avhrr.lat)
-    # sic = compute_sic(avhrr.data[2]/avhrr.data[1], pigobs, pwgobs, pcgobs, avhrr.lon, avhrr.lat)
 
     swath_def = pr.geometry.SwathDefinition(lons=avhrr.lon, lats=avhrr.lat)
     area_def = pr.utils.load_area(areas_filepath, 'nsidc_stere_north_10k')
@@ -277,16 +294,18 @@ def main():
                                               valid_input_index, valid_output_index,
                                               index_array, fill_value=-32767)
 
-    # sic_resampled = pr.kd_tree.resample_nearest(swath_def,
-    #                                       sic,# avhrr.data[2]/avhrr.data[1],#sic,
-    #                                       area_def,
-    #                                       radius_of_influence=10000,
-    #                                       fill_value=None,
-    #                                       nprocs=4)
-
-
     sic_filename = compose_filename(avhrr)
     output_path = os.path.join(args.output_dir[0], sic_filename)
+
+    # Load OSI SAF landmask and apply to resampled SIC array
+    land_mask_filepath = os.path.join(os.path.dirname(
+                                      os.path.abspath(__file__)),
+		                      'resources',
+                                      'land_mask.npz')
+
+    land_mask = get_osisaf_land_mask(land_mask_filepath)
+    sic_res = apply_mask(land_mask, sic_res)
+    # import pdb; pdb.set_trace()
 
     (area_def.lons, area_def.lats) = area_def.get_lonlats()
     save_sic(output_path,
