@@ -51,10 +51,10 @@ def compute_sic( data, pice, pwater, pclouds, lons, lats ):
         sic (numpy.ndarray):    array with sea ice concentration values
     """
 
-    xmin = 0
-    xmax = 2
+    # xmin = 0
+    # xmax = 2
 
-    xspace = np.arange(xmin,xmax,1000)
+    # xspace = np.arange(xmin,xmax,1000)
 
     # ice_mask = ( pice > 0.95 ) * ( lats > 60 )
     # water_mask = ( pwater > 0.95  ) * (lats > 60)
@@ -89,21 +89,21 @@ def compute_sic( data, pice, pwater, pclouds, lons, lats ):
 
     ice_mask = pice <= 0.99
     water_mask = pwater <= 0.99
-    lats_mask = lats < 60
+    lats_mask = lats < 65
 
 
-    only_ice_mask = (pice > pwater) * (pice > pclouds) * (lats > 60)
-    only_ice_data = ma.array(data, mask = ~only_ice_mask)
+    only_ice_mask = (pice > pwater) * (pice > pclouds) * (lats > 65)
+    only_ice_data = ma.array(data, mask = only_ice_mask)
 
     ice_data = ma.array(data, mask = (ice_mask * lats_mask) == False)
     ice_hist = np.histogram(ice_data[ice_data.mask == False], 20)
-    ice_max = np.mean(ice_hist[1])
+    # ice_max = np.mean(ice_hist[1])
 
     water_data = ma.array(data, mask = (water_mask * lats_mask) == False)
     water_hist = np.histogram(water_data[water_data.mask == False], 20)
     water_max = np.min(water_hist[1])
 
-    print "MAX: {}, {}".format( ice_data.max(), water_data.max())
+    # rint "MAX: {}, {}".format( ice_data.max(), water_data.max())
 
     only_ice_mask = (pice > pwater) * (pice > pclouds) * (lats > 65)
     only_ice_data = ma.array(data, mask = only_ice_mask == False)
@@ -211,7 +211,9 @@ def apply_mask(mask_array, data_array):
     Returns:
         masked_data_array (numpy.ma.ndarray) : masked array
     """
-    masked_data_array = np.ma.array(data_array.data, mask = data_array.mask + mask_array)
+    # masked_data_array = np.ma.array(data_array.data, mask = data_array.mask + mask_array)
+    masked_data_array = np.where(mask_array == True, 200, data_array)
+
     return masked_data_array
     
 
@@ -305,7 +307,6 @@ def main():
 
     land_mask = get_osisaf_land_mask(land_mask_filepath)
     sic_res = apply_mask(land_mask, sic_res)
-    # import pdb; pdb.set_trace()
 
     (area_def.lons, area_def.lats) = area_def.get_lonlats()
     save_sic(output_path,
@@ -351,16 +352,16 @@ def calc_wic_prob_day_twi(coeffs, avhrr, angles):
 
     # Decide which data to use.
     # Especially important for chosing between re1.6/re0.6 and bt3.7-bt11. Prefer to use 1.6 if available.
-    #useA0906  = (A06 >= 0.00001) * (A09 >= 0.00001)
-    #useA0906 *= (A06 <= 100.0) * (A09 <= 100.0)
-    #useA0906 *= (SOZ > 0.0) * (SOZ < 90.0)
+    useA0906  = (A06 >= 0.00001) * (A09 >= 0.00001)
+    useA0906 *= (A06 <= 100.0) * (A09 <= 100.0)
+    useA0906 *= (SOZ > 0.0) * (SOZ < 90.0)
     useA16    = (A16 > 0.00001) * (A16 <= 100.0)
     useA16   *= (SOZ > 0.0) * (SOZ < 90.0)
     useT37    = np.invert(useA16) * (T37 > 50.0)
     useT37   *= (T37 < 400.0) * (T11 > 50.0)
     useT37   *= (T11 < 400.0) * (SOZ > 0.0) * (SOZ < 90.0)    
-    useA16  = np.array([False]) #$  = (A16 > 0.00001) * (A16 <= 100.0)
-    useT37  = np.array([False]) #  = np.invert(useA16) * (T37 > 50.0)
+    # useA16  = np.array([False]) #$  = (A16 > 0.00001) * (A16 <= 100.0)
+    # useT37  = np.array([False]) #  = np.invert(useA16) * (T37 > 50.0)
 
     # Combine the input variables to the features to be used
     A0906 = (A09 / A06)
@@ -573,7 +574,7 @@ class AvhrrData(object):
 
         # Collect data from all channels to data[ch], including gain and offset on 
         # all valid values.
-        for ch in range(1,6):
+        for ch in range(1,7):
             image = 'image' + str(ch)
             self.data[ch] = np.float32(avhrr[image]['data'].value)
             offset = avhrr[image]['what'].attrs['offset'] # To check for K?
