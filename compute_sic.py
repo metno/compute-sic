@@ -36,7 +36,7 @@ def solve(m1,m2,std1,std2):
   return np.roots([a,b,c])
 
 def compute_sic( data, pice, pwater, pclouds, lons, lats ):
-    """compute sic
+    """compute sea ice concentration
 
     use probability information to select tie points
     pixel with highest probability of sea ice or water
@@ -51,62 +51,21 @@ def compute_sic( data, pice, pwater, pclouds, lons, lats ):
         sic (numpy.ndarray):    array with sea ice concentration values
     """
 
-    # xmin = 0
-    # xmax = 2
-
-    # xspace = np.arange(xmin,xmax,1000)
-
-    # ice_mask = ( pice > 0.95 ) * ( lats > 60 )
-    # water_mask = ( pwater > 0.95  ) * (lats > 60)
-
-    # # ice_mask = (pice > pwater) * (lats>60)
-    # # water_mask = (pwater>pice) * (lats>60)
-
-    # ice_data = np.ma.array(data, mask = ~ice_mask)
-    # water_data = np.ma.array(data, mask = ~water_mask)
-
-    # ni, binsi, patchesi = plt.hist(ice_data.compressed(), 20, normed=1, alpha = 0.5, facecolor='blue')
-    # nw, binsw, patchesw = plt.hist(water_data.compressed(),20, normed=1, alpha = 0.5, facecolor='green')
-
-    # (mu_ice, sigma_ice) = stats.norm.fit(ice_data.compressed())
-    # y_ice = mlab.normpdf(binsi, mu_ice, sigma_ice)
-    # # plt.plot(binsi, y_ice, 'r--')
-
-    # (mu_water, sigma_water) = stats.norm.fit(water_data.compressed())
-    # y_water = mlab.normpdf(binsw, mu_water, sigma_water)
-    # # plt.plot(binsw, y_water, 'g--')
-
-    # ab,bb,cb,db = stats.beta.fit(water_data.compressed())
-    # pdf_beta = stats.beta.pdf(binsw, ab, bb,cb, db)
-    # # plt.plot(binsw, pdf_beta, 'y--')
-
-    # intersection = solve(mu_ice, mu_water, sigma_ice, sigma_water)
-    # # plt.plot(intersection, mlab.normpdf(intersection, mu_ice, sigma_ice), 'ro')
-
-    # # plt.savefig('dist.png')
-
-    # print "INTERSECTION: ", intersection
-
-    ice_mask = pice <= 0.99
-    water_mask = pwater <= 0.99
-    lats_mask = lats < 65
-
-
-    only_ice_mask = (pice > pwater) * (pice > pclouds) * (lats > 65)
-    only_ice_data = ma.array(data, mask = only_ice_mask)
+    ice_mask = pice >= 0.99
+    water_mask = pwater >= 0.99
+    lats_mask = lats > 65
 
     ice_data = ma.array(data, mask = (ice_mask * lats_mask) == False)
     ice_hist = np.histogram(ice_data[ice_data.mask == False], 20)
-    # ice_max = np.mean(ice_hist[1])
+    # ice_max = np.mean(ice_hist[1]) - define what value should be a maximum ice concentration tie point on the fly
 
     water_data = ma.array(data, mask = (water_mask * lats_mask) == False)
     water_hist = np.histogram(water_data[water_data.mask == False], 20)
     water_max = np.min(water_hist[1])
 
-    # rint "MAX: {}, {}".format( ice_data.max(), water_data.max())
-
+    # pick the pixels where the probability of ice is higher than other surface types
     only_ice_mask = (pice > pwater) * (pice > pclouds) * (lats > 65)
-    only_ice_data = ma.array(data, mask = only_ice_mask == False)
+    only_ice_data = ma.array(data, mask = ~only_ice_mask)
 
     # compute regression coefficients
     slope, intercept, r_value, p_value, std_err = stats.linregress((water_max, 20), (0, 100))
@@ -124,7 +83,7 @@ def get_osisaf_land_mask(filepath):
         filepath (str) : path to file
     """
     data = np.load(filepath)
-    land_mask = data['land_mask']
+    land_mask = data['land_mask'].astype('bool')
     return land_mask
 
 def save_sic(output_filename, sic, pice, pwater, pclouds, a06, a09, timestamp, lon, lat):
@@ -212,9 +171,14 @@ def apply_mask(mask_array, data_array):
         masked_data_array (numpy.ma.ndarray) : masked array
     """
     # masked_data_array = np.ma.array(data_array.data, mask = data_array.mask + mask_array)
-    masked_data_array = np.where(mask_array == True, 200, data_array)
+    
+    masked_data_array = np.where(mask_array == True, 200, data_array.data)
+    original_mask = data_array.mask
 
-    return masked_data_array
+    combined_mask = np.array(original_mask - mask_array, dtype='bool')
+    data_array_with_combined_mask = np.ma.array(masked_data_array, mask = combined_mask)
+
+    return data_array_with_combined_mask
     
 
 def main():
@@ -306,6 +270,7 @@ def main():
                                       'land_mask.npz')
 
     land_mask = get_osisaf_land_mask(land_mask_filepath)
+    # import ipdb; ipdb.set_trace()
     sic_res = apply_mask(land_mask, sic_res)
 
     (area_def.lons, area_def.lats) = area_def.get_lonlats()
