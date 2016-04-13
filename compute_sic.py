@@ -59,9 +59,9 @@ def compute_sic( data, pice, pwater, pclouds, lons, lats ):
     ice_hist = np.histogram(ice_data[ice_data.mask == False], 20)
     # ice_max = np.mean(ice_hist[1]) - define what value should be a maximum ice concentration tie point on the fly
 
-    water_data = ma.array(data, mask = (water_mask * lats_mask) == False)
+    water_data = ma.array(data, mask = ~(water_mask * lats_mask))
     water_hist = np.histogram(water_data[water_data.mask == False], 20)
-    water_max = np.min(water_hist[1])
+    water_max = np.max(water_hist[1])
 
     # pick the pixels where the probability of ice is higher than other surface types
     only_ice_mask = (pice > pwater) * (pice > pclouds) * (lats > 65)
@@ -175,7 +175,7 @@ def apply_mask(mask_array, data_array):
     masked_data_array = np.where(mask_array == True, 200, data_array.data)
     original_mask = data_array.mask
 
-    combined_mask = np.array(original_mask - mask_array, dtype='bool')
+    combined_mask = np.where(mask_array == True, False, original_mask)
     data_array_with_combined_mask = np.ma.array(masked_data_array, mask = combined_mask)
 
     return data_array_with_combined_mask
