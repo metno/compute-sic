@@ -65,6 +65,8 @@ def compute_sic( data, pice, pwater, pclouds, lons, lats ):
 
     # pick the pixels where the probability of ice is higher than other surface types
     only_ice_mask = (pice > pwater) * (pice > pclouds) * (lats > 65)
+    only_water_mask = (pwater > pice) * (pwater > pclouds ) * (lats > 65)
+
     only_ice_data = ma.array(data, mask = ~only_ice_mask)
 
     # compute regression coefficients
@@ -73,6 +75,9 @@ def compute_sic( data, pice, pwater, pclouds, lons, lats ):
 
     sic = np.where(sic>100, 100, sic)
     sic = np.where(sic<0, 0, sic)
+
+    sic_with_water = np.where(only_water_mask == True, 0, sic.data)
+    sic = np.ma.array(np.where(only_ice_mask==True, sic, sic_with_water), mask = ~(only_ice_mask + only_water_mask))
 
     return sic
 
