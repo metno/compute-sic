@@ -74,6 +74,9 @@ def compute_sic( data, pice, pwater, pclouds, lons, lats ):
     sic = np.where(sic>100, 100, sic)
     sic = np.where(sic<0, 0, sic)
 
+    # Include open water as 0% ice concentration
+    sic = np.where(((pwater > pice) + (pwater > pclouds) + (lats > 65)) == True, 0, sic)
+
     return sic
 
 def get_osisaf_land_mask(filepath):
