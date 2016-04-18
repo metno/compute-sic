@@ -171,7 +171,7 @@ def apply_mask(mask_array, data_array):
         masked_data_array (numpy.ma.ndarray) : masked array
     """
     # masked_data_array = np.ma.array(data_array.data, mask = data_array.mask + mask_array)
-    
+
     masked_data_array = np.where(mask_array == True, 200, data_array.data)
     original_mask = data_array.mask
 
@@ -179,7 +179,7 @@ def apply_mask(mask_array, data_array):
     data_array_with_combined_mask = np.ma.array(masked_data_array, mask = combined_mask)
 
     return data_array_with_combined_mask
-    
+
 
 def main():
 
@@ -324,25 +324,25 @@ def calc_wic_prob_day_twi(coeffs, avhrr, angles):
     useA16   *= (SOZ > 0.0) * (SOZ < 90.0)
     useT37    = np.invert(useA16) * (T37 > 50.0)
     useT37   *= (T37 < 400.0) * (T11 > 50.0)
-    useT37   *= (T11 < 400.0) * (SOZ > 0.0) * (SOZ < 90.0)    
+    useT37   *= (T11 < 400.0) * (SOZ > 0.0) * (SOZ < 90.0)
     # useA16  = np.array([False]) #$  = (A16 > 0.00001) * (A16 <= 100.0)
     # useT37  = np.array([False]) #  = np.invert(useA16) * (T37 > 50.0)
 
     # Combine the input variables to the features to be used
     A0906 = (A09 / A06)
     try:
-        A1606 = (A16 / A06) 
+        A1606 = (A16 / A06)
     except:
         pass
-   
+
     T3711 = (T37-T11)
-    
+
     # Estimate the probability of getting the observed A09/A06 and A16/A06 or T37-T11
     # given ice, cloud or water.
 
     # First, always calculate the re0.9/re0.6 and re0.6 probabilities and put in VAR1 and VAR2 variables
     var = 're09/re06'
-    cloud_mean, cloud_std, sea_mean, sea_std, ice_mean, ice_std = get_coeffs_for_var(coeffs, var, 
+    cloud_mean, cloud_std, sea_mean, sea_std, ice_mean, ice_std = get_coeffs_for_var(coeffs, var,
                                                                 indices=coeff_indices)
 
     pVAR1gc = normalpdf(A0906, cloud_mean, cloud_std)
@@ -351,19 +351,19 @@ def calc_wic_prob_day_twi(coeffs, avhrr, angles):
 
     if (useA06):
         var = 're06'
-        cloud_mean, cloud_std, sea_mean, sea_std, ice_mean, ice_std = get_coeffs_for_var(coeffs, var, 
+        cloud_mean, cloud_std, sea_mean, sea_std, ice_mean, ice_std = get_coeffs_for_var(coeffs, var,
                                                                                          indices=coeff_indices)
         pVAR2gc = normalpdf(A06, cloud_mean, cloud_std)
         pVAR2gw = normalpdf(A06, sea_mean, sea_std)
         pVAR2gi = normalpdf(A06, ice_mean, ice_std)
-    
+
 
     # Calculate the re1.6/re0.6 probabilities if any of the input data have the 1.6um channel
     if (useA16.any()):
         var = 're16/re06'
         cloud_mean, cloud_std, sea_mean, sea_std, ice_mean, ice_std = get_coeffs_for_var(coeffs, var,
                                                                         indices=coeff_indices)
-        
+
         pA1606gc = normalpdf(A1606, cloud_mean, cloud_std)
         pA1606gw = normalpdf(A1606, sea_mean, sea_std)
         pA1606gi = normalpdf(A1606, ice_mean, ice_std)
@@ -400,7 +400,7 @@ def calc_wic_prob_day_twi(coeffs, avhrr, angles):
 
     useVAR3  = useA16 + useT37
 
-    
+
     # Use Bayes theorem and estimate probability for ice, water and cloud.
     # Assumes equal apriori probability for ice, water, and cloud.
 
@@ -429,7 +429,6 @@ def calc_wic_prob_day_twi(coeffs, avhrr, angles):
             pigobs[useVAR3] = ((pVAR1gi[useVAR3]*pVAR3gi[useVAR3]) / psumVAR123[useVAR3])
             pwgobs[useVAR3] = ((pVAR1gw[useVAR3]*pVAR3gw[useVAR3]) / psumVAR123[useVAR3])
             pcgobs[useVAR3] = ((pVAR1gc[useVAR3]*pVAR3gc[useVAR3]) / psumVAR123[useVAR3])
-            
 
 
     # Quality check on the probabilities
@@ -437,7 +436,7 @@ def calc_wic_prob_day_twi(coeffs, avhrr, angles):
     falsevalue *= (pigobs > 1.0)*(pigobs < 0.0)
     falsevalue *= (pcgobs > 1.0)*(pcgobs < 0.0)
     falsevalue *= ma.is_masked(A06)
-    
+
     pigobs[falsevalue] = prob_undef
     pcgobs[falsevalue] = prob_undef
     pwgobs[falsevalue] = prob_undef
@@ -454,7 +453,7 @@ def get_coeffs_for_var(coeffs, var, indices=None):
     a = coeffs[coeffs['var']==var]['coeffs']
     cloud_coeffs, sea_coeffs, ice_coeffs, snow_coeffs, land_coeffs= coeffs[coeffs['var']==var]['coeffs']
 
-    # Get array of coefficients indexed by integer SOZ, split into mean and std 
+    # Get array of coefficients indexed by integer SOZ, split into mean and std
     # TODO: this is gross
     cloud_mean, cloud_std = cloud_coeffs[indices][:,:,1], cloud_coeffs[indices][:,:,2]
     sea_mean, sea_std = sea_coeffs[indices][:,:,1], sea_coeffs[indices][:,:,2],
@@ -473,13 +472,13 @@ def read_coeffs_from_file(filename):
      '''
     dtype = [('sensor', 'a15'),
              ('datatype','a6'),
-             ('SOT','a9'),           
-            ('var', 'a18'), 
+             ('SOT','a9'),
+            ('var', 'a18'),
             ('wic', 'a8'),
-             ('FCD', 'a8'), 
+             ('FCD', 'a8'),
             ('coeffs', 'f4', (91,3))
-            #('coeffs', 
-            #   [('mean', 'f4'), 
+            #('coeffs',
+            #   [('mean', 'f4'),
             #   ('std', 'f4')], 91)
             ]
     coeffs = np.genfromtxt(filename, dtype=dtype)
@@ -489,8 +488,8 @@ def read_coeffs_from_file(filename):
 def normalpdf(x, mu, sigma):
     ''' Calculate Gaussian distribution.
 
-        mu: mean of distribution, 
-        sigma: std of distribution, 
+        mu: mean of distribution,
+        sigma: std of distribution,
         x: value for which to calculate
     '''
 
@@ -501,8 +500,8 @@ def normalpdf(x, mu, sigma):
 def lognormalpdf(x, mu, sigma):
     ''' Calculate log-normal distribution.
 
-    mu: mean of log of distribution, 
-    sigma: std of log of distribution, 
+    mu: mean of log of distribution,
+    sigma: std of log of distribution,
     x: value for which to calculate
     '''
 
@@ -521,7 +520,7 @@ def lognormalpdf(x, mu, sigma):
 # TODO: return appropriate type based on filename (one base class?)
 
 class AvhrrData(object):
-    """ Container for AVHRR GAC swath data. 
+    """ Container for AVHRR GAC swath data.
 
     Channels accessed by: data[ch], where ch are [_, A1, A2, T3, T4, T5, A3]
     """
@@ -537,7 +536,7 @@ class AvhrrData(object):
 
         self._get_timestamp()
 
-        # Collect data from all channels to data[ch], including gain and offset on 
+        # Collect data from all channels to data[ch], including gain and offset on
         # all valid values.
         for ch in range(1,7):
             image = 'image' + str(ch)
@@ -551,7 +550,7 @@ class AvhrrData(object):
             self.data[ch][mask] = self.data[ch][mask] * gain + offset
 
         if locations:
-            lat = avhrr['where']['lat']['data'].value 
+            lat = avhrr['where']['lat']['data'].value
             lon = avhrr['where']['lon']['data'].value
 
             gain = avhrr['where']['lat']['what'].attrs['gain']
@@ -567,7 +566,7 @@ class AvhrrData(object):
         """
         start_epoch = self._filehandle['how'].attrs['startepochs']
 
-        timestamp = datetime.datetime.utcfromtimestamp(float(start_epoch)) 
+        timestamp = datetime.datetime.utcfromtimestamp(float(start_epoch))
         self.timestamp = timestamp
 
 
@@ -585,7 +584,7 @@ class AngleData(object):
             gain = angles[image]['what'].attrs['gain']
             self.nodata[ch] = angles[image]['what'].attrs['nodata']
             self.missingdata[ch] = angles[image]['what'].attrs['missingdata']
-            
+
             mask = (self.data[ch] != self.missingdata[ch]) & (self.data[ch] != self.nodata[ch])
             self.data[ch][mask] = self.data[ch][mask] * gain + offset
 
