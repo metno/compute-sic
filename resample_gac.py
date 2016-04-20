@@ -158,7 +158,7 @@ def main():
 
     timestamp = (avhrr.timestamp - datetime.datetime(1970,1,1)).total_seconds()
 
-    save_netcdf(netcdf_filename,
+    save_netcdf(output_path,
                 variables = variables_dict,
                 timestamp = timestamp,
                 lons = avhrr.lon,
