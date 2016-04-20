@@ -1,10 +1,7 @@
 #!/usr/bin/env python
 '''
-Classify AVHRR GAC data surface types and compute sea ice concentration
-
-Surface classification code written by Steinar Eastwood, FoU
-Avhrr reading routine - part of `gactools` written by Cristina Luis, FoU
-
+Read AVHRR GAC data, resample to polarstereographic grid and save
+as netcdf file
 
 '''
 
@@ -16,7 +13,7 @@ import numpy as np
 import numpy.ma as ma
 import pyresample as pr
 import matplotlib
-matplotlib.use('Agg')
+# matplotlib.use('Agg')
 
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
@@ -36,6 +33,44 @@ def save_netcdf(output_path,
                 area_def=None,
                 resample=True):
 
+
+
+    # split pass in two pieces as pyresample is not able to give priority to the
+    # most recent data over the old one. That causes problem when the same pass
+    # covers the same area twice
+    y_size = lons.shape[0]
+    y_halfsize = y_size/2
+
+    # strip 20 lines from the beginning and the end as they are often corrupt
+    idxs = [20, y_halfsize, y_size-20]
+
+    for i, idx in enumerate(idxs[:-1]):
+
+        idx_1 = idxs[i]
+        idx_2 = idxs[i+1]
+
+        swath_def = pr.geometry.SwathDefinition(lons=lons[idx_1:idx_2,:], lats=lats[idx_1:idx_2,:])
+
+        valid_input_index, valid_output_index, index_array, distance_array = \
+                                kd_tree.get_neighbour_info(swath_def,
+                                                          area_def, 25000,
+                                                           neighbours=1)
+
+        for dataset_name in variables.keys():
+
+            dataset = variables[dataset_name]['data'][idx_1:idx_2,:]
+            dataset_res = kd_tree.get_sample_from_neighbour_info('nn',
+                                                    area_def.shape, dataset,
+                                                    valid_input_index, valid_output_index,
+                                                    index_array, fill_value=-32767)
+
+            if variables[dataset_name]['dataset_res'] is None:
+                variables[dataset_name]['dataset_res'] = dataset_res
+            else:
+               variables[dataset_name]['dataset_res'] = np.where(dataset_res != -32767, dataset_res, variables[dataset_name]['dataset_res'])
+
+    # Once the datasets have been resampled save them into netcdf file
+    # create netcdf file
     filehandle = netCDF4.Dataset(output_path, 'w')
     filehandle.createDimension('time', size=1)
     filehandle.createVariable('time', 'l', dimensions=('time'))
@@ -44,27 +79,13 @@ def save_netcdf(output_path,
     filehandle.createDimension('x', size=area_def.lons.shape[0])
     filehandle.createDimension('y', size=area_def.lons.shape[1])
 
-    swath_def = pr.geometry.SwathDefinition(lons=lons, lats=lats)
-    valid_input_index, valid_output_index, index_array, distance_array = \
-                            kd_tree.get_neighbour_info(swath_def,
-                                                      area_def, 10000,
-                                                       neighbours=1)
-
     for dataset_name in variables.keys():
-        dataset = variables[dataset_name]['data']
-        dataset_res = kd_tree.get_sample_from_neighbour_info('nn',
-                                                area_def.shape, dataset,
-                                                valid_input_index, valid_output_index,
-                                                index_array, fill_value=-32767)
-
         filehandle.createVariable(dataset_name, 'f4', dimensions=('time', 'x', 'y'))
         filehandle.variables[dataset_name].coordinates = "lon lat"
         filehandle.variables[dataset_name].units = variables[dataset_name]['units']
         filehandle.variables[dataset_name].missing_value = -32767
         filehandle.variables[dataset_name].fill_value = -32767
-        filehandle.variables[dataset_name][0,:,:] = dataset_res
-
-
+        filehandle.variables[dataset_name][0,:,:] = variables[dataset_name]['dataset_res']
     filehandle.close()
 
 def compose_filename(data, sensor_name):
@@ -121,16 +142,16 @@ def main():
     (area_def.lons, area_def.lats) = area_def.get_lonlats()
 
     variables_dict = collections.OrderedDict()
-    variables_dict['vis06'] = { 'name': 'Reflectance 0.6', 'data': avhrr.data[1], 'units': '' }
-    variables_dict['vis09'] = { 'name': 'Reflectance 0.9', 'data': avhrr.data[2], 'units': '' }
-    variables_dict['tb37'] = { 'name': 'Brightness temperature 2.7', 'data': avhrr.data[3], 'units': 'K' }
-    variables_dict['tb11'] = { 'name': 'Brightness temperature 11', 'data': avhrr.data[4], 'units': 'K' }
-    variables_dict['tb12'] = { 'name': 'Brightness temperature 12', 'data': avhrr.data[5], 'units': 'K' }
-    variables_dict['vis16'] = { 'name': 'Reflectance 0.6', 'data': avhrr.data[6], 'units': '' }
-    variables_dict['cloudmask'] = { 'name': 'Categorical cloudmask', 'data': cloudmask.data, 'units': '' }
-    variables_dict['sunsatangles'] = { 'name': 'Sun elevation angles', 'data': angles.data[1], 'units': 'degrees' }
-    variables_dict['lon'] = { 'name': 'Longitudes', 'data': avhrr.lon, 'units': 'degrees_east' }
-    variables_dict['lat'] = { 'name': 'Latitudes', 'data': avhrr.lat, 'units': 'degrees_north' }
+    variables_dict['vis06'] = { 'name': 'Reflectance 0.6', 'data': avhrr.data[1], 'units': '', 'dataset_res': None }
+    variables_dict['vis09'] = { 'name': 'Reflectance 0.9', 'data': avhrr.data[2], 'units': '', 'dataset_res': None }
+    variables_dict['tb37'] = { 'name': 'Brightness temperature 2.7', 'data': avhrr.data[3], 'units': 'K', 'dataset_res': None }
+    variables_dict['tb11'] = { 'name': 'Brightness temperature 11', 'data': avhrr.data[4], 'units': 'K', 'dataset_res': None}
+    variables_dict['tb12'] = { 'name': 'Brightness temperature 12', 'data': avhrr.data[5], 'units': 'K' , 'dataset_res': None}
+    variables_dict['vis16'] = { 'name': 'Reflectance 0.6', 'data': avhrr.data[6], 'units': '' , 'dataset_res': None}
+    variables_dict['cloudmask'] = { 'name': 'Categorical cloudmask', 'data': cloudmask.data, 'units': '' , 'dataset_res': None}
+    variables_dict['sunsatangles'] = { 'name': 'Sun elevation angles', 'data': angles.data[1], 'units': 'degrees', 'dataset_res': None}
+    variables_dict['lon'] = { 'name': 'Longitudes', 'data': avhrr.lon, 'units': 'degrees_east', 'dataset_res': None}
+    variables_dict['lat'] = { 'name': 'Latitudes', 'data': avhrr.lat, 'units': 'degrees_north', 'dataset_res': None }
 
     netcdf_filename = compose_filename(avhrr, sensor_name)
     output_path = os.path.join(args.output_dir[0], netcdf_filename)
