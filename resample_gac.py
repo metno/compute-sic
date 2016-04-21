@@ -54,20 +54,21 @@ def save_netcdf(output_path,
         valid_input_index, valid_output_index, index_array, distance_array = \
                                 kd_tree.get_neighbour_info(swath_def,
                                                           area_def, 25000,
-                                                           neighbours=1)
+                                                           neighbours=1, nprocs=8)
 
         for dataset_name in variables.keys():
 
-            dataset = variables[dataset_name]['data'][idx_1:idx_2,:]
-            dataset_res = kd_tree.get_sample_from_neighbour_info('nn',
-                                                    area_def.shape, dataset,
-                                                    valid_input_index, valid_output_index,
-                                                    index_array, fill_value=-32767)
+            if variables[dataset_name]['data'] is not None:
+                dataset = variables[dataset_name]['data'][idx_1:idx_2,:]
+                dataset_res = kd_tree.get_sample_from_neighbour_info('nn',
+                                                        area_def.shape, dataset,
+                                                        valid_input_index, valid_output_index,
+                                                        index_array, fill_value=-32767)
 
-            if variables[dataset_name]['dataset_res'] is None:
-                variables[dataset_name]['dataset_res'] = dataset_res
-            else:
-               variables[dataset_name]['dataset_res'] = np.where(dataset_res != -32767, dataset_res, variables[dataset_name]['dataset_res'])
+                if variables[dataset_name]['dataset_res'] is None:
+                    variables[dataset_name]['dataset_res'] = dataset_res
+                else:
+                   variables[dataset_name]['dataset_res'] = np.where(dataset_res != -32767, dataset_res, variables[dataset_name]['dataset_res'])
 
     # Once the datasets have been resampled save them into netcdf file
     # create netcdf file
@@ -187,15 +188,17 @@ class AvhrrData(object):
         # Collect data from all channels to data[ch], including gain and offset on
         # all valid values.
         for ch in range(1,7):
-            image = 'image' + str(ch)
-            self.data[ch] = np.float32(avhrr[image]['data'].value)
-            offset = avhrr[image]['what'].attrs['offset'] # To check for K?
-            gain = avhrr[image]['what'].attrs['gain']
-            self.nodata[ch] = avhrr[image]['what'].attrs['nodata']
-            self.missingdata[ch] = avhrr[image]['what'].attrs['missingdata']
-
-            mask = (self.data[ch] != self.missingdata[ch]) & (self.data[ch] != self.nodata[ch])
-            self.data[ch][mask] = self.data[ch][mask] * gain + offset
+            try:
+                image = 'image' + str(ch)
+                self.data[ch] = np.float32(avhrr[image]['data'].value)
+                offset = avhrr[image]['what'].attrs['offset'] # To check for K?
+                gain = avhrr[image]['what'].attrs['gain']
+                self.nodata[ch] = avhrr[image]['what'].attrs['nodata']
+                self.missingdata[ch] = avhrr[image]['what'].attrs['missingdata']
+                mask = (self.data[ch] != self.missingdata[ch]) & (self.data[ch] != self.nodata[ch])
+                self.data[ch][mask] = self.data[ch][mask] * gain + offset
+            except:
+                pass
 
         if locations:
             lat = avhrr['where']['lat']['data'].value
