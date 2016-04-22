@@ -3,14 +3,13 @@
 Classify AVHRR GAC data surface types and compute sea ice concentration
 
 Surface classification code written by Steinar Eastwood, FoU
-Avhrr reading routine - part of `gactools` written by Cristina Luis, FoU
-
 
 '''
 
 import os
 import h5py
 import argparse
+import datetime
 
 import numpy as np
 import numpy.ma as ma
@@ -64,7 +63,7 @@ def compute_sic( data, pice, pwater, pclouds, lons, lats ):
     water_max = np.max(water_hist[1])
 
     # pick the pixels where the probability of ice is higher than other surface types
-    only_ice_mask = (pice > pwater) * (pice > pclouds) * (lats > 65)
+    only_ice_mask = (pice > pwater) * (lats > 65)   * (pice > pclouds) 
     only_water_mask = (pwater > pice) * (pwater > pclouds ) * (lats > 65)
 
     only_ice_data = ma.array(data, mask = ~only_ice_mask)
@@ -76,7 +75,7 @@ def compute_sic( data, pice, pwater, pclouds, lons, lats ):
     sic = np.where(sic>100, 100, sic)
     sic = np.where(sic<0, 0, sic)
 
-    sic_with_water = np.where(only_water_mask == True, 0, sic.data)
+    sic_with_water = np.where(only_water_mask == True, 0, sic)
     sic = np.ma.array(np.where(only_ice_mask==True, sic, sic_with_water), mask = ~(only_ice_mask + only_water_mask))
 
     return sic
@@ -93,6 +92,7 @@ def get_osisaf_land_mask(filepath):
 
 def save_sic(output_filename, sic, timestamp, lon, lat):
 
+    sic = sic[0,:,:]
     filehandle = netCDF4.Dataset(output_filename, 'w')
     filehandle.createDimension('time', size=1)
     filehandle.createVariable('time', 'l', dimensions=('time'))
@@ -122,10 +122,10 @@ def save_sic(output_filename, sic, timestamp, lon, lat):
 
     filehandle.close()
 
-def compose_filename(data):
-    timestamp = data.timestamp
+def compose_filename(data, sensor_name):
+    timestamp = datetime.datetime.fromtimestamp(data.variables['time'][0])
     timestamp_string = timestamp.strftime('%Y%m%d_%H%M')
-    filename = 'avhrr_iceconc_{}_arctic.nc'.format(timestamp_string)
+    filename = '{}_iceconc_{}_arctic.nc'.format(sensor_name,timestamp_string)
     return filename
 
 def apply_mask(mask_array, data_array):
@@ -195,9 +195,9 @@ def main():
     lons = avhrr.variables['lon'][:]
     lats = avhrr.variables['lat'][:]
 
-    sic = compute_sic(vis06, pigobs, pwgobs, pcgobs, lons, lat)
+    sic = compute_sic(vis06, pigobs, pwgobs, pcgobs, lons, lats)
 
-    sic_filename = compose_filename(avhrr)
+    sic_filename = compose_filename(avhrr, sensor_name)
     output_path = os.path.join(args.output_dir[0], sic_filename)
 
     # Load OSI SAF landmask and apply to resampled SIC array
@@ -207,14 +207,13 @@ def main():
                                       'land_mask.npz')
 
     land_mask = get_osisaf_land_mask(land_mask_filepath)
-    sic_res = apply_mask(land_mask, sic_res)
+    sic = apply_mask(land_mask, sic)
 
-    (area_def.lons, area_def.lats) = area_def.get_lonlats()
     save_sic(output_path,
-                 sic_res,
-                 (avhrr.timestamp - datetime.datetime(1970,1,1)).total_seconds(),
-                 area_def.lons,
-                 area_def.lats)
+                 sic,
+                 avhrr.variables['time'][0],
+                 avhrr.variables['lon'][:,:],
+                 avhrr.variables['lat'][:,:])
 
 
 
@@ -238,7 +237,7 @@ def calc_wic_prob_day_twi(coeffs, avhrr):
 
     # Turn the SOZ numbers into ints suitable for indexing (truncate float to int)
     SOZ = SOZ.astype(np.int16)
-    coeff_indices = np.where(SOZ <= 90, SOZ, 0)
+    coeff_indices = np.where((SOZ >= 0) * (SOZ <= 90), SOZ, 0)
     #day_mask = SOZ <= 90
     #SOZ = ma.masked_greater(SOZ, 90)
 
