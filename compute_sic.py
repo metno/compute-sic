@@ -3,14 +3,13 @@
 Classify AVHRR GAC data surface types and compute sea ice concentration
 
 Surface classification code written by Steinar Eastwood, FoU
-Avhrr reading routine - part of `gactools` written by Cristina Luis, FoU
-
 
 '''
 
 import os
 import h5py
 import argparse
+import datetime
 
 import numpy as np
 import numpy.ma as ma
@@ -64,7 +63,7 @@ def compute_sic( data, pice, pwater, pclouds, lons, lats ):
     water_max = np.max(water_hist[1])
 
     # pick the pixels where the probability of ice is higher than other surface types
-    only_ice_mask = (pice > pwater) * (pice > pclouds) * (lats > 65)
+    only_ice_mask = (pice > pwater) * (lats > 65)   * (pice > pclouds) 
     only_water_mask = (pwater > pice) * (pwater > pclouds ) * (lats > 65)
 
     only_ice_data = ma.array(data, mask = ~only_ice_mask)
@@ -76,7 +75,7 @@ def compute_sic( data, pice, pwater, pclouds, lons, lats ):
     sic = np.where(sic>100, 100, sic)
     sic = np.where(sic<0, 0, sic)
 
-    sic_with_water = np.where(only_water_mask == True, 0, sic.data)
+    sic_with_water = np.where(only_water_mask == True, 0, sic)
     sic = np.ma.array(np.where(only_ice_mask==True, sic, sic_with_water), mask = ~(only_ice_mask + only_water_mask))
 
     return sic
@@ -91,8 +90,9 @@ def get_osisaf_land_mask(filepath):
     land_mask = data['land_mask'].astype('bool')
     return land_mask
 
-def save_sic(output_filename, sic, pice, pwater, pclouds, a06, a09, timestamp, lon, lat):
+def save_sic(output_filename, sic, timestamp, lon, lat):
 
+    sic = sic[0,:,:]
     filehandle = netCDF4.Dataset(output_filename, 'w')
     filehandle.createDimension('time', size=1)
     filehandle.createVariable('time', 'l', dimensions=('time'))
@@ -119,49 +119,13 @@ def save_sic(output_filename, sic, pice, pwater, pclouds, a06, a09, timestamp, l
     filehandle.variables['ice_conc'].fill_value = -32767
     filehandle.variables['ice_conc'][:] = sic
 
-    # filehandle.createVariable('pice', 'f4', dimensions=('time', 'x', 'y'))
-    # filehandle.variables['pice'].coordinates = "lon lat"
-    # filehandle.variables['pice'].units = ""
-    # filehandle.variables['pice'].missing_value = -32767
-    # filehandle.variables['pice'].fill_value = -32767
-
-    # filehandle.createVariable('pwater', 'f4', dimensions=('time', 'x', 'y'))
-    # filehandle.variables['pwater'].coordinates = "lon lat"
-    # filehandle.variables['pwater'].units = ""
-    # filehandle.variables['pwater'].missing_value = -32767
-    # filehandle.variables['pwater'].fill_value = -32767
-
-    # filehandle.createVariable('pclouds', 'f4', dimensions=('time', 'x', 'y'))
-    # filehandle.variables['pclouds'].coordinates = "lon lat"
-    # filehandle.variables['pclouds'].units = ""
-    # filehandle.variables['pclouds'].missing_value = -32767
-    # filehandle.variables['pclouds'].fill_value = -32767
-
-    # filehandle.createVariable('A06', 'f4', dimensions=('time', 'x', 'y'))
-    # filehandle.variables['A06'].coordinates = "lon lat"
-    # filehandle.variables['A06'].units = ""
-    # filehandle.variables['A06'].missing_value = -32767
-    # filehandle.variables['A06'].fill_value = -32767
-
-    # filehandle.createVariable('A09', 'f4', dimensions=('time', 'x', 'y'))
-    # filehandle.variables['A09'].coordinates = "lon lat"
-    # filehandle.variables['A09'].units = ""
-    # filehandle.variables['A09'].missing_value = -32767
-    # filehandle.variables['A09'].fill_value = -32767
-
-    # filehandle.variables['avhrr_iceconc'][:] = sic.astype('f4')
-    # filehandle.variables['pice'][:] = pice.astype('f4')
-    # filehandle.variables['pwater'][:] = pwater.astype('f4')
-    # filehandle.variables['pclouds'][:] = pclouds.astype('f4')
-    # filehandle.variables['A06'][:] = a06.astype('f4')
-    # filehandle.variables['A09'][:] = a09.astype('f4')
 
     filehandle.close()
 
-def compose_filename(data):
-    timestamp = data.timestamp
+def compose_filename(data, sensor_name):
+    timestamp = datetime.datetime.fromtimestamp(data.variables['time'][0])
     timestamp_string = timestamp.strftime('%Y%m%d_%H%M')
-    filename = 'avhrr_iceconc_{}_arctic.nc'.format(timestamp_string)
+    filename = '{}_iceconc_{}_arctic.nc'.format(sensor_name,timestamp_string)
     return filename
 
 def apply_mask(mask_array, data_array):
@@ -223,49 +187,17 @@ def main():
     avhrr_filepath = args.input_file[0]
     avhrr_dirpath = os.path.dirname(avhrr_filepath)
     avhrr_basename = os.path.basename(avhrr_filepath)
-    avhrr = AvhrrData(avhrr_filepath, locations=True)
+    avhrr = netCDF4.Dataset(avhrr_filepath, locations=True)
 
-    angles_basename = avhrr_basename.replace('avhrr', 'sunsatangles')
-    angles_filepath = os.path.join(avhrr_dirpath, angles_basename)
-    angles = AngleData(angles_filepath)
+    pigobs, pcgobs, pwgobs = calc_wic_prob_day_twi(coeffs, avhrr)
 
-    pigobs, pcgobs, pwgobs = calc_wic_prob_day_twi(coeffs, avhrr, angles)
+    vis06 = avhrr.variables['vis06'][:]
+    lons = avhrr.variables['lon'][:]
+    lats = avhrr.variables['lat'][:]
 
-    sic = compute_sic(avhrr.data[1], pigobs, pwgobs, pcgobs, avhrr.lon, avhrr.lat)
+    sic = compute_sic(vis06, pigobs, pwgobs, pcgobs, lons, lats)
 
-    swath_def = pr.geometry.SwathDefinition(lons=avhrr.lon, lats=avhrr.lat)
-    area_def = pr.utils.load_area(areas_filepath, 'nsidc_stere_north_10k')
-
-    valid_input_index, valid_output_index, index_array, distance_array = \
-                            kd_tree.get_neighbour_info(swath_def,
-                                                           area_def, 10000,
-                                                       neighbours=1)
-
-    sic_res = kd_tree.get_sample_from_neighbour_info('nn', area_def.shape, sic,
-                                              valid_input_index, valid_output_index,
-                                              index_array, fill_value=-32767)
-
-    pice_res = kd_tree.get_sample_from_neighbour_info('nn', area_def.shape, pigobs,
-                                              valid_input_index, valid_output_index,
-                                              index_array, fill_value=-32767)
-
-    pwater_res = kd_tree.get_sample_from_neighbour_info('nn', area_def.shape, pwgobs,
-                                              valid_input_index, valid_output_index,
-                                              index_array, fill_value=-32767)
-
-    pclouds_res = kd_tree.get_sample_from_neighbour_info('nn', area_def.shape, pcgobs,
-                                              valid_input_index, valid_output_index,
-                                              index_array, fill_value=-32767)
-
-    a06_res = kd_tree.get_sample_from_neighbour_info('nn', area_def.shape, avhrr.data[1],
-                                              valid_input_index, valid_output_index,
-                                              index_array, fill_value=-32767)
-
-    a09_res = kd_tree.get_sample_from_neighbour_info('nn', area_def.shape, avhrr.data[2],
-                                              valid_input_index, valid_output_index,
-                                              index_array, fill_value=-32767)
-
-    sic_filename = compose_filename(avhrr)
+    sic_filename = compose_filename(avhrr, sensor_name)
     output_path = os.path.join(args.output_dir[0], sic_filename)
 
     # Load OSI SAF landmask and apply to resampled SIC array
@@ -275,28 +207,17 @@ def main():
                                       'land_mask.npz')
 
     land_mask = get_osisaf_land_mask(land_mask_filepath)
-    # import ipdb; ipdb.set_trace()
-    sic_res = apply_mask(land_mask, sic_res)
+    sic = apply_mask(land_mask, sic)
 
-    (area_def.lons, area_def.lats) = area_def.get_lonlats()
     save_sic(output_path,
-                 sic_res,
-                 pice_res,
-                 pwater_res,
-                 pclouds_res,
-                 a06_res,
-                 a09_res,
-                 (avhrr.timestamp - datetime.datetime(1970,1,1)).total_seconds(),
-                 area_def.lons,
-                 area_def.lats)
-
-    soz = angles.data[1]
-    day_mask = soz <= 90
-
-    area = "nsidc_stere_north_10k"
+                 sic,
+                 avhrr.variables['time'][0],
+                 avhrr.variables['lon'][:,:],
+                 avhrr.variables['lat'][:,:])
 
 
-def calc_wic_prob_day_twi(coeffs, avhrr, angles):
+
+def calc_wic_prob_day_twi(coeffs, avhrr):
     ''' Calculate water-ice-cloud daytime and twilight probabilities.'''
 
     # Use A06 or not
@@ -307,16 +228,16 @@ def calc_wic_prob_day_twi(coeffs, avhrr, angles):
     prob_undef   = -999.0
 
     # Put data in variables with shorter name, just for simplicity
-    A06 = avhrr.data[1]
-    A09 = avhrr.data[2]
-    A16 = avhrr.data[6]
-    T37 = avhrr.data[3]
-    T11 = avhrr.data[4]
-    SOZ = angles.data[1]
+    A06 = avhrr.variables['vis06'][0,:,:]# avhrr.data[1]
+    A09 = avhrr.variables['vis09'][0,:,:]# avhrr.data[2]
+    A16 = avhrr.variables['vis16'][0,:,:]
+    T37 = avhrr.variables['tb37'][0,:,:]
+    T11 = avhrr.variables['tb11'][0,:,:]
+    SOZ = avhrr.variables['sunsatangles'][0,:,:]
 
     # Turn the SOZ numbers into ints suitable for indexing (truncate float to int)
     SOZ = SOZ.astype(np.int16)
-    coeff_indices = np.where(SOZ <= 90, SOZ, 0)
+    coeff_indices = np.where((SOZ >= 0) * (SOZ <= 90), SOZ, 0)
     #day_mask = SOZ <= 90
     #SOZ = ma.masked_greater(SOZ, 90)
 
@@ -524,83 +445,6 @@ def lognormalpdf(x, mu, sigma):
 # TODO: check out pypps to share ideas
 # TODO: return appropriate type based on filename (one base class?)
 
-class AvhrrData(object):
-    """ Container for AVHRR GAC swath data.
-
-    Channels accessed by: data[ch], where ch are [_, A1, A2, T3, T4, T5, A3]
-    """
-
-    pre = ['pass', 'A1', 'A2', 'T3', 'T4', 'T5', 'A3']
-
-    def __init__(self, filename, locations=False):
-        """ Read in AVHRR data file in HDF5 format and cleans it up for ready use."""
-
-        self._filehandle = h5py.File(filename, 'r')
-        avhrr = self._filehandle
-        self.data, self.nodata, self.missingdata = [[None]*7 for i in range(3)]
-
-        self._get_timestamp()
-
-        # Collect data from all channels to data[ch], including gain and offset on
-        # all valid values.
-        for ch in range(1,7):
-            image = 'image' + str(ch)
-            self.data[ch] = np.float32(avhrr[image]['data'].value)
-            offset = avhrr[image]['what'].attrs['offset'] # To check for K?
-            gain = avhrr[image]['what'].attrs['gain']
-            self.nodata[ch] = avhrr[image]['what'].attrs['nodata']
-            self.missingdata[ch] = avhrr[image]['what'].attrs['missingdata']
-
-            mask = (self.data[ch] != self.missingdata[ch]) & (self.data[ch] != self.nodata[ch])
-            self.data[ch][mask] = self.data[ch][mask] * gain + offset
-
-        if locations:
-            lat = avhrr['where']['lat']['data'].value
-            lon = avhrr['where']['lon']['data'].value
-
-            gain = avhrr['where']['lat']['what'].attrs['gain']
-
-            self.lat = lat * gain
-            self.lon = lon * gain
-
-        # avhrr.close()
-
-
-    def _get_timestamp(self):
-        """
-        """
-        start_epoch = self._filehandle['how'].attrs['startepochs']
-
-        timestamp = datetime.datetime.utcfromtimestamp(float(start_epoch))
-        self.timestamp = timestamp
-
-
-class AngleData(object):
-    """ Read in AVHRR angles file in HDF5 format and clean it up for ready use."""
-    pre = ['pass', 'soz', 'saz', 'pass', 'azu', 'aza']
-
-    def __init__(self, filename):
-        angles = h5py.File(filename, 'r')
-        self.data, self.nodata, self.missingdata = [[None]*6 for i in range(3)]
-        for ch in range(1,6):
-            image = 'image{}'.format(ch)
-            self.data[ch] = np.float32(angles[image]['data'].value)
-            offset = angles[image]['what'].attrs['offset']  # For K check?
-            gain = angles[image]['what'].attrs['gain']
-            self.nodata[ch] = angles[image]['what'].attrs['nodata']
-            self.missingdata[ch] = angles[image]['what'].attrs['missingdata']
-
-            mask = (self.data[ch] != self.missingdata[ch]) & (self.data[ch] != self.nodata[ch])
-            self.data[ch][mask] = self.data[ch][mask] * gain + offset
-
-        angles.close()
-
-    def describe(self):
-        print '''image 1: sun zenith angle. \n
-                image 2: satellite zenith angle. \n
-                image 3: relative sun-satellite azimuth difference angle \n
-                image 4: absolute sun azimuth angle \n
-                image 5: absolute satellite azimuth angle \n'''
 
 if __name__ == '__main__':
     main()
