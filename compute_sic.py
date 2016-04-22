@@ -234,10 +234,12 @@ def calc_wic_prob_day_twi(coeffs, avhrr):
     T37 = avhrr.variables['tb37'][0,:,:]
     T11 = avhrr.variables['tb11'][0,:,:]
     SOZ = avhrr.variables['sunsatangles'][0,:,:]
+    SOZ_LOWLIM = 0
+    SOZ_HIGHLIM = 70
 
     # Turn the SOZ numbers into ints suitable for indexing (truncate float to int)
     SOZ = SOZ.astype(np.int16)
-    coeff_indices = np.where((SOZ >= 0) * (SOZ <= 90), SOZ, 0)
+    coeff_indices = np.where((SOZ >= SOZ_LOWLIM) * (SOZ <= SOZ_HIGHLIM), SOZ, 0)
     #day_mask = SOZ <= 90
     #SOZ = ma.masked_greater(SOZ, 90)
 
@@ -247,10 +249,10 @@ def calc_wic_prob_day_twi(coeffs, avhrr):
     useA0906 *= (A06 <= 100.0) * (A09 <= 100.0)
     useA0906 *= (SOZ > 0.0) * (SOZ < 90.0)
     useA16    = (A16 > 0.00001) * (A16 <= 100.0)
-    useA16   *= (SOZ > 0.0) * (SOZ < 90.0)
+    useA16   *= (SOZ > SOZ_LOWLIM) * (SOZ < SOZ_HIGHLIM)
     useT37    = np.invert(useA16) * (T37 > 50.0)
     useT37   *= (T37 < 400.0) * (T11 > 50.0)
-    useT37   *= (T11 < 400.0) * (SOZ > 0.0) * (SOZ < 90.0)
+    useT37   *= (T11 < 400.0) * (SOZ > SOZ_LOWLIM) * (SOZ < HIGHLIM)
     # useA16  = np.array([False]) #$  = (A16 > 0.00001) * (A16 <= 100.0)
     # useT37  = np.array([False]) #  = np.invert(useA16) * (T37 > 50.0)
 
@@ -367,11 +369,6 @@ def calc_wic_prob_day_twi(coeffs, avhrr):
     pcgobs[falsevalue] = prob_undef
     pwgobs[falsevalue] = prob_undef
 
-    # Could also return simple flag.
-    #iceclflag = (pigobs*100.0 + pcgobs*100.0)
-    #iceclflag[falsevalue] = iceclflundef
-    #iceclflag[iceclflag > 100] = iceclflundef
-
     return (pigobs,pcgobs,pwgobs)
 
 def get_coeffs_for_var(coeffs, var, indices=None):
@@ -437,13 +434,6 @@ def lognormalpdf(x, mu, sigma):
     C = x*sigma*math.sqrt(2.0*math.pi)
     gpdf = 1.0*e/C
     return(gpdf)
-
-
-# AVHRR code by Cristina Luis
-
-# TODO: easily named access for each channel
-# TODO: check out pypps to share ideas
-# TODO: return appropriate type based on filename (one base class?)
 
 
 if __name__ == '__main__':
