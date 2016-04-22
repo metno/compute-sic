@@ -54,17 +54,17 @@ def compute_sic( data, pice, pwater, pclouds, lons, lats ):
     water_mask = pwater >= 0.99
     lats_mask = lats > 65
 
-    ice_data = ma.array(data, mask = (ice_mask * lats_mask) == False)
+    ice_data = ma.array(data, mask = ice_mask  == False)
     ice_hist = np.histogram(ice_data[ice_data.mask == False], 20)
     # ice_max = np.mean(ice_hist[1]) - define what value should be a maximum ice concentration tie point on the fly
 
-    water_data = ma.array(data, mask = ~(water_mask * lats_mask))
+    water_data = ma.array(data, mask = ~water_mask)
     water_hist = np.histogram(water_data[water_data.mask == False], 20)
     water_max = np.max(water_hist[1])
 
     # pick the pixels where the probability of ice is higher than other surface types
-    only_ice_mask = (pice > pwater) * (lats > 65)   * (pice > pclouds) 
-    only_water_mask = (pwater > pice) * (pwater > pclouds ) * (lats > 65)
+    only_ice_mask = (pice > pwater) * (pice > pclouds) 
+    only_water_mask = (pwater > pice) * (pwater > pclouds )
 
     only_ice_data = ma.array(data, mask = ~only_ice_mask)
 
@@ -252,7 +252,7 @@ def calc_wic_prob_day_twi(coeffs, avhrr):
     useA16   *= (SOZ > SOZ_LOWLIM) * (SOZ < SOZ_HIGHLIM)
     useT37    = np.invert(useA16) * (T37 > 50.0)
     useT37   *= (T37 < 400.0) * (T11 > 50.0)
-    useT37   *= (T11 < 400.0) * (SOZ > SOZ_LOWLIM) * (SOZ < HIGHLIM)
+    useT37   *= (T11 < 400.0) * (SOZ > SOZ_LOWLIM) * (SOZ < SOZ_HIGHLIM)
     # useA16  = np.array([False]) #$  = (A16 > 0.00001) * (A16 <= 100.0)
     # useT37  = np.array([False]) #  = np.invert(useA16) * (T37 > 50.0)
 
