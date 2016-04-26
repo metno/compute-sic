@@ -63,7 +63,7 @@ def compute_sic( data, pice, pwater, pclouds, lons, lats ):
     water_max = np.max(water_hist[1])
 
     # pick the pixels where the probability of ice is higher than other surface types
-    only_ice_mask = (pice > pwater) * (pice > pclouds) 
+    only_ice_mask = (pice > pwater) * (pice > pclouds)
     only_water_mask = (pwater > pice) * (pwater > pclouds )
 
     only_ice_data = ma.array(data, mask = ~only_ice_mask)
@@ -165,14 +165,9 @@ def main():
                          help='Name of the sensor, e.g. avhrr_metop02',
                          type=str)
 
-    # p.add_argument("-s", "--satellite_name")
-    # p.add_argument('-b', '--channels', nargs='+',
-    #                      help='Input channels',
-    #                      type=str)
     args = p.parse_args()
     areas_filepath = args.areas_file[0]
 
-    ''' Test wic-classifier in python.'''
 
     # Read in test coefficients file for daytime
     # coeffs_filename = 'coeffPDF_daytime_mean-std-line_v2p1.txt'
@@ -203,7 +198,7 @@ def main():
     # Load OSI SAF landmask and apply to resampled SIC array
     land_mask_filepath = os.path.join(os.path.dirname(
                                       os.path.abspath(__file__)),
-		                      'resources',
+		                              'resources',
                                       'land_mask.npz')
 
     land_mask = get_osisaf_land_mask(land_mask_filepath)
@@ -247,7 +242,7 @@ def calc_wic_prob_day_twi(coeffs, avhrr):
     # Especially important for chosing between re1.6/re0.6 and bt3.7-bt11. Prefer to use 1.6 if available.
     useA0906  = (A06 >= 0.00001) * (A09 >= 0.00001)
     useA0906 *= (A06 <= 100.0) * (A09 <= 100.0)
-    useA0906 *= (SOZ > 0.0) * (SOZ < 90.0)
+    useA0906 *= (SOZ > 0.0) * (SOZ < SOZ_HIGHLIM)
     useA16    = (A16 > 0.00001) * (A16 <= 100.0)
     useA16   *= (SOZ > SOZ_LOWLIM) * (SOZ < SOZ_HIGHLIM)
     useT37    = np.invert(useA16) * (T37 > 50.0)
