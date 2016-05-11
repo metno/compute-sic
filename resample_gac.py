@@ -13,7 +13,7 @@ import numpy as np
 import numpy.ma as ma
 import pyresample as pr
 import matplotlib
-# matplotlib.use('Agg')
+matplotlib.use('Agg')
 
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
@@ -53,7 +53,7 @@ def save_netcdf(output_path,
 
         valid_input_index, valid_output_index, index_array, distance_array = \
                                 kd_tree.get_neighbour_info(swath_def,
-                                                          area_def, 25000,
+                                                          area_def, 15000,
                                                            neighbours=1, nprocs=8)
 
         for dataset_name in variables.keys():
@@ -61,14 +61,14 @@ def save_netcdf(output_path,
             if variables[dataset_name]['data'] is not None:
                 dataset = variables[dataset_name]['data'][idx_1:idx_2,:]
                 dataset_res = kd_tree.get_sample_from_neighbour_info('nn',
-                                                        area_def.shape, dataset,
+                                                        area_def.shape, dataset.astype(np.float),
                                                         valid_input_index, valid_output_index,
                                                         index_array, fill_value=-32767)
 
                 if variables[dataset_name]['dataset_res'] is None:
                     variables[dataset_name]['dataset_res'] = dataset_res
                 else:
-                   variables[dataset_name]['dataset_res'] = np.where(dataset_res != -32767, dataset_res, variables[dataset_name]['dataset_res'])
+                    variables[dataset_name]['dataset_res'] = np.where(dataset_res != -32767, dataset_res, variables[dataset_name]['dataset_res'])
 
     # Once the datasets have been resampled save them into netcdf file
     # create netcdf file
@@ -203,14 +203,9 @@ class AvhrrData(object):
         if locations:
             lat = avhrr['where']['lat']['data'].value
             lon = avhrr['where']['lon']['data'].value
-
             gain = avhrr['where']['lat']['what'].attrs['gain']
-
             self.lat = lat * gain
             self.lon = lon * gain
-
-        # avhrr.close()
-
 
     def _get_timestamp(self):
         """
