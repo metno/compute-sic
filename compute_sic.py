@@ -34,7 +34,7 @@ def solve(m1,m2,std1,std2):
   c = m1**2 /(2*std1**2) - m2**2 / (2*std2**2) - np.log(std2/std1)
   return np.roots([a,b,c])
 
-def compute_sic( data, pice, pwater, pclouds, lons, lats ):
+def compute_sic( data, pice, pwater, pclouds, cloudmask, coeffs, coeff_indices, lons, lats, soz ):
     """compute sea ice concentration
 
     use probability information to select tie points
@@ -50,9 +50,8 @@ def compute_sic( data, pice, pwater, pclouds, lons, lats ):
         sic (numpy.ndarray):    array with sea ice concentration values
     """
 
-    ice_mask = pice >= 0.99
-    water_mask = pwater >= 0.99
-    lats_mask = lats > 65
+    ice_mask = pice >= 0.9
+    water_mask = pwater >= 0.9
 
     ice_data = ma.array(data, mask = ice_mask  == False)
     ice_hist = np.histogram(ice_data[ice_data.mask == False], 20)
@@ -63,17 +62,29 @@ def compute_sic( data, pice, pwater, pclouds, lons, lats ):
     water_max = np.max(water_hist[1])
 
     # pick the pixels where the probability of ice is higher than other surface types
-    only_ice_mask = (pice > pwater) * (pice > pclouds)
-    only_water_mask = (pwater > pice) * (pwater > pclouds )
+    only_ice_mask = (cloudmask == 4) #+ (cloudmask == 1)  # * (cloudmask != 2) * (cloudmask !=3 ) * (cloudmask == 1) # (pice > pwater) * (pice > pclouds) * (cloudmask == 2) # * (cloudmask !=3)#  * (pice > 0.8)
+    only_water_mask = (pwater > pice + pclouds) * (cloudmask==1)
 
     only_ice_data = ma.array(data, mask = ~only_ice_mask)
 
     # compute regression coefficients
-    slope, intercept, r_value, p_value, std_err = stats.linregress((water_max, 20), (0, 100))
-    sic = slope * only_ice_data + intercept
+    # slope, intercept, r_value, p_value, std_err = stats.linregress((water_max, 20), (0, 100))
+    # sic = slope *  only_ice_data + intercept
+
+    var = 're06'
+    cloud_mean, cloud_std, sea_mean, sea_std, ice_mean, ice_std = get_coeffs_for_var(coeffs, var,
+                                                                indices=coeff_indices)
+
+    # ice_mean_ma = np.ma.array(cloud_mean, mask = ((SOZ.mask==True)+(SOZ.data > 70)))
+    # water_mean_ma = np.ma.array(sea_mean, mask = ((SOZ.mask==True)+(SOZ.data > 70)))
+    # soz_ma = np.ma.array(SOZ, mask = ((SOZ.mask==True)+(SOZ.data > 70)))
+
+    # sic = 100*only_ice_data/(ice_mean - 3*ice_std - sea_mean)
+    sic = 100*only_ice_data/(ice_mean-70.-ice_std - sea_mean)
+    print ice_std.mean(), ice_mean.mean(), only_ice_data.mean()
 
     sic = np.where(sic>100, 100, sic)
-    sic = np.where(sic<0, 0, sic)
+    sic = np.where(sic<15, 0, sic)
 
     sic_with_water = np.where(only_water_mask == True, 0, sic)
     sic = np.ma.array(np.where(only_ice_mask==True, sic, sic_with_water), mask = ~(only_ice_mask + only_water_mask))
@@ -187,10 +198,19 @@ def main():
     pigobs, pcgobs, pwgobs = calc_wic_prob_day_twi(coeffs, avhrr)
 
     vis06 = avhrr.variables['vis06'][:]
+    vis09 = avhrr.variables['vis09'][:]
     lons = avhrr.variables['lon'][:]
     lats = avhrr.variables['lat'][:]
+    cloudmask = avhrr.variables['cloudmask'][:]
 
-    sic = compute_sic(vis06, pigobs, pwgobs, pcgobs, lons, lats)
+
+    soz = avhrr.variables['sunsatangles'][0,:,:]
+    SOZ_LOWLIM = 0
+    SOZ_HIGHLIM = 70
+    SOZ = soz.astype(np.int16)
+    coeff_indices = np.where((SOZ >= SOZ_LOWLIM) * (SOZ <= SOZ_HIGHLIM), SOZ, 0)
+
+    sic = compute_sic(vis06, pigobs, pwgobs, pcgobs, cloudmask, coeffs, coeff_indices, lons, lats, SOZ)
 
     sic_filename = compose_filename(avhrr, sensor_name)
     output_path = os.path.join(args.output_dir[0], sic_filename)
@@ -223,11 +243,11 @@ def calc_wic_prob_day_twi(coeffs, avhrr):
     prob_undef   = -999.0
 
     # Put data in variables with shorter name, just for simplicity
-    A06 = avhrr.variables['vis06'][0,:,:]# avhrr.data[1]
-    A09 = avhrr.variables['vis09'][0,:,:]# avhrr.data[2]
-    A16 = avhrr.variables['vis16'][0,:,:]
-    T37 = avhrr.variables['tb37'][0,:,:]
-    T11 = avhrr.variables['tb11'][0,:,:]
+    A06 = np.ma.array( avhrr.variables['vis06'][0,:,:], mask = avhrr.variables['vis06'][0,:,:] <0 )# avhrr.data[1]
+    A09 = np.ma.array(avhrr.variables['vis09'][0,:,:], mask = avhrr.variables['vis09'][0,:,:] < 0)# avhrr.data[2]
+    A16 = np.ma.array(avhrr.variables['vis16'][0,:,:], mask = avhrr.variables['vis16'][0,:,:] < 0)
+    T37 = np.ma.array(avhrr.variables['tb37'][0,:,:], mask = avhrr.variables['tb37'][0,:,:] < 0)
+    T11 = np.ma.array(avhrr.variables['tb11'][0,:,:], mask = avhrr.variables['tb11'][0,:,:] < 0)
     SOZ = avhrr.variables['sunsatangles'][0,:,:]
     SOZ_LOWLIM = 0
     SOZ_HIGHLIM = 70
@@ -235,8 +255,6 @@ def calc_wic_prob_day_twi(coeffs, avhrr):
     # Turn the SOZ numbers into ints suitable for indexing (truncate float to int)
     SOZ = SOZ.astype(np.int16)
     coeff_indices = np.where((SOZ >= SOZ_LOWLIM) * (SOZ <= SOZ_HIGHLIM), SOZ, 0)
-    #day_mask = SOZ <= 90
-    #SOZ = ma.masked_greater(SOZ, 90)
 
     # Decide which data to use.
     # Especially important for chosing between re1.6/re0.6 and bt3.7-bt11. Prefer to use 1.6 if available.
@@ -248,8 +266,6 @@ def calc_wic_prob_day_twi(coeffs, avhrr):
     useT37    = np.invert(useA16) * (T37 > 50.0)
     useT37   *= (T37 < 400.0) * (T11 > 50.0)
     useT37   *= (T11 < 400.0) * (SOZ > SOZ_LOWLIM) * (SOZ < SOZ_HIGHLIM)
-    # useA16  = np.array([False]) #$  = (A16 > 0.00001) * (A16 <= 100.0)
-    # useT37  = np.array([False]) #  = np.invert(useA16) * (T37 > 50.0)
 
     # Combine the input variables to the features to be used
     A0906 = (A09 / A06)
@@ -258,7 +274,38 @@ def calc_wic_prob_day_twi(coeffs, avhrr):
     except:
         pass
 
-    T3711 = (T37-T11)
+    # T3711 = (T37-T11)
+    # Constants
+    Lsun = 5.112
+    Aval = 0 # 1.592459
+    Bval = 1 # 0.998147
+    Vc = 2674.81  # 1 # 2700.1148
+
+    C1 = 1.1910427 * 0.00001
+    C2 = 1.438775
+
+    # compute effective temperature
+    Tch37 = Aval+ Bval * T37
+    Tch11 = Aval + Bval * T11
+
+    # Compute radiance of 3.7 and 11 microns channels
+    Ne37 = ( C1 * ( Vc ** 3) )/( np.exp(C2 * Vc/Tch37) -1.)
+    Ne11 = ( C1 * ( Vc ** 3) )/( np.exp(C2 * Vc/Tch11) -1.)
+
+    #Calculate distance to Sun
+    doy = 213
+    theta0 = (2. * np.pi * doy - 1 ) / 365.
+    dcorr = ( 1.000110 + 0.034221 * np.cos(theta0) + 0.001280*np.sin(theta0) + 0.000719*np.cos(2.*theta0) + 0.000077*np.sin(2.*theta0)) # distance correction acc. to DOY
+    sollum = dcorr * Lsun * np.cos(np.deg2rad(SOZ))
+
+    # Substract 11 microns channel from T37 to calculate 3.7 reflectance
+    A37nonmasked = 100 * ( (Ne37 - Ne11) / (sollum - Ne11))
+    A37 = np.ma.array(A37nonmasked, mask = (A37nonmasked > 100) + (A37nonmasked < 0))
+    A3706 = np.ma.array(A37 / A06, mask = (A37/A06<0) + (A37/A06>1))
+    print 'A37', A37.mean(), A37.max(), A37.min()
+    print 'A06', A06.mean(), A06.max(), A06.min()
+    print 'A3706', A3706.mean(), A3706.max(), A3706.min()
+
 
     # Estimate the probability of getting the observed A09/A06 and A16/A06 or T37-T11
     # given ice, cloud or water.
@@ -276,6 +323,19 @@ def calc_wic_prob_day_twi(coeffs, avhrr):
         var = 're06'
         cloud_mean, cloud_std, sea_mean, sea_std, ice_mean, ice_std = get_coeffs_for_var(coeffs, var,
                                                                                          indices=coeff_indices)
+        ice_mean_ma = np.ma.array(cloud_mean, mask = ((SOZ.mask==True)+(SOZ.data > 70)))
+        water_mean_ma = np.ma.array(sea_mean, mask = ((SOZ.mask==True)+(SOZ.data > 70)))
+        soz_ma = np.ma.array(SOZ, mask = ((SOZ.mask==True)+(SOZ.data > 70)))
+        plt.clf();plt.imshow(np.ma.array(water_mean_ma)); plt.colorbar();plt.savefig('water_mean.png')
+        plt.clf();plt.imshow(np.ma.array(ice_mean, mask = ((SOZ.mask==True)+(SOZ.data > 70)))); plt.colorbar();plt.savefig('ice_mean.png')
+        plt.clf();plt.imshow(np.ma.array(SOZ, mask = ((SOZ.mask==True)+(SOZ.data > 70)))); plt.colorbar();plt.savefig('sozn.png')
+        plt.clf(); plt.plot(soz_ma.compressed(), ice_mean_ma.compressed());plt.savefig('soz-ice-plot.png')
+        plt.clf(); plt.plot(soz_ma.compressed(), water_mean_ma.compressed());plt.savefig('soz-sea-plot.png')
+
+
+        slope, intercept, r_value, p_value, std_err = stats.linregress(soz_ma.compressed(), ice_mean_ma.compressed())
+        print slope, intercept, std_err
+
         pVAR2gc = normalpdf(A06, cloud_mean, cloud_std)
         pVAR2gw = normalpdf(A06, sea_mean, sea_std)
         pVAR2gi = normalpdf(A06, ice_mean, ice_std)
@@ -293,13 +353,14 @@ def calc_wic_prob_day_twi(coeffs, avhrr):
 
     # Calculate the bt3.7-bt11 probabilities if any of the input data have the 3.7um channel
     if (useT37.any()):
-        var = 'bt37-bt11'
+        # var = 'bt37-bt11'
+        var = 're37/re06'
         cloud_mean, cloud_std, sea_mean, sea_std, ice_mean, ice_std = get_coeffs_for_var(coeffs, var,
                                                                             indices=coeff_indices)
 
-        pT3711gc = normalpdf(T3711, ice_mean, ice_std)
-        pT3711gw = normalpdf(T3711, cloud_mean, cloud_std)
-        pT3711gi = normalpdf(T3711, sea_mean, sea_std)
+        pT3711gc = normalpdf(A3706, ice_mean, ice_std)
+        pT3711gw = normalpdf(A3706, cloud_mean, cloud_std)
+        pT3711gi = normalpdf(A3706, sea_mean, sea_std)
 
     # Put the re1.6/re0.6 based or bt3.7-bt11 based probabilites in VAR2 variables
     # re1.6/re0.6 have first priority. First fill with bt3.7-bt11, then overwrite
@@ -376,6 +437,7 @@ def get_coeffs_for_var(coeffs, var, indices=None):
     cloud_mean, cloud_std = cloud_coeffs[indices][:,:,1], cloud_coeffs[indices][:,:,2]
     sea_mean, sea_std = sea_coeffs[indices][:,:,1], sea_coeffs[indices][:,:,2],
     ice_mean, ice_std = ice_coeffs[indices][:,:,1], ice_coeffs[indices][:,:,2]
+
 
     return cloud_mean, cloud_std, sea_mean, sea_std, ice_mean, ice_std
 
