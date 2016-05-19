@@ -15,7 +15,7 @@ import numpy as np
 import numpy.ma as ma
 import pyresample as pr
 import matplotlib
-matplotlib.use('Agg')
+# matplotlib.use('Agg')
 
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
@@ -28,11 +28,20 @@ import datetime
 
 from matplotlib import mlab
 
+def load_extent_mask(filepath):
+    '''
+    Args:
+        filepath (str) : path to filepath
+    '''
+    data = np.load(filepath)
+    extent_mask = data['extent_mask']
+    return extent_mask
+
 def solve(m1,m2,std1,std2):
-  a = 1/(2*std1**2) - 1/(2*std2**2)
-  b = m2/(std2**2) - m1/(std1**2)
-  c = m1**2 /(2*std1**2) - m2**2 / (2*std2**2) - np.log(std2/std1)
-  return np.roots([a,b,c])
+    a = 1/(2*std1**2) - 1/(2*std2**2)
+    b = m2/(std2**2) - m1/(std1**2)
+    c  = m1**2 /(2*std1**2) - m2**2 / (2*std2**2) - np.log(std2/std1)
+    return np.roots([a,b,c])
 
 def compute_sic( data, pice, pwater, pclouds, cloudmask, coeffs, coeff_indices, lons, lats, soz ):
     """compute sea ice concentration
@@ -50,41 +59,16 @@ def compute_sic( data, pice, pwater, pclouds, cloudmask, coeffs, coeff_indices, 
         sic (numpy.ndarray):    array with sea ice concentration values
     """
 
-    ice_mask = pice >= 0.9
-    water_mask = pwater >= 0.9
-
-    ice_data = ma.array(data, mask = ice_mask  == False)
-    ice_hist = np.histogram(ice_data[ice_data.mask == False], 20)
-    # ice_max = np.mean(ice_hist[1]) - define what value should be a maximum ice concentration tie point on the fly
-
-    water_data = ma.array(data, mask = ~water_mask)
-    water_hist = np.histogram(water_data[water_data.mask == False], 20)
-    water_max = np.max(water_hist[1])
-
     # pick the pixels where the probability of ice is higher than other surface types
-    only_ice_mask = (cloudmask == 4) #+ (cloudmask == 1)  # * (cloudmask != 2) * (cloudmask !=3 ) * (cloudmask == 1) # (pice > pwater) * (pice > pclouds) * (cloudmask == 2) # * (cloudmask !=3)#  * (pice > 0.8)
-    only_water_mask = (pwater > pice + pclouds) * (cloudmask==1)
-
+    only_ice_mask = (cloudmask == 4) * (soz.mask==False) * (soz < 89)
+    only_water_mask = ((pwater > pice + pclouds) * (cloudmask==1))
     only_ice_data = ma.array(data, mask = ~only_ice_mask)
 
-    # compute regression coefficients
-    # slope, intercept, r_value, p_value, std_err = stats.linregress((water_max, 20), (0, 100))
-    # sic = slope *  only_ice_data + intercept
-
-    var = 're06'
-    cloud_mean, cloud_std, sea_mean, sea_std, ice_mean, ice_std = get_coeffs_for_var(coeffs, var,
-                                                                indices=coeff_indices)
-
-    # ice_mean_ma = np.ma.array(cloud_mean, mask = ((SOZ.mask==True)+(SOZ.data > 70)))
-    # water_mean_ma = np.ma.array(sea_mean, mask = ((SOZ.mask==True)+(SOZ.data > 70)))
-    # soz_ma = np.ma.array(SOZ, mask = ((SOZ.mask==True)+(SOZ.data > 70)))
-
-    # sic = 100*only_ice_data/(ice_mean - 3*ice_std - sea_mean)
-    sic = 100*only_ice_data/(ice_mean-70.-ice_std - sea_mean)
-    print ice_std.mean(), ice_mean.mean(), only_ice_data.mean()
-
+    ice_mean = np.ma.array(coeffs[coeff_indices][:,:,1], mask = coeffs[coeff_indices][:,:,1]==0)
+    ice_std = coeffs[coeff_indices][:,:,2]
+    ice_std = np.where(ice_std >= ice_mean, ice_mean/3, ice_std)
+    sic = 100*only_ice_data/(ice_mean - ice_std/2)
     sic = np.where(sic>100, 100, sic)
-    sic = np.where(sic<15, 0, sic)
 
     sic_with_water = np.where(only_water_mask == True, 0, sic)
     sic = np.ma.array(np.where(only_ice_mask==True, sic, sic_with_water), mask = ~(only_ice_mask + only_water_mask))
@@ -103,7 +87,6 @@ def get_osisaf_land_mask(filepath):
 
 def save_sic(output_filename, sic, timestamp, lon, lat):
 
-    sic = sic[0,:,:]
     filehandle = netCDF4.Dataset(output_filename, 'w')
     filehandle.createDimension('time', size=1)
     filehandle.createVariable('time', 'l', dimensions=('time'))
@@ -175,6 +158,8 @@ def main():
     p.add_argument('-s', '--sensor', nargs=1,
                          help='Name of the sensor, e.g. avhrr_metop02',
                          type=str)
+    p.add_argument('-m', '--mean-coeffs', nargs=1, help='mean and standard deviation over ice')
+    p.add_argument('-e', '--extent-mask-file', nargs=1, help='climatological ice extent mask')
 
     args = p.parse_args()
     areas_filepath = args.areas_file[0]
@@ -186,6 +171,7 @@ def main():
     coeffs = read_coeffs_from_file(coeffs_filename)
     sensor_name = args.sensor[0]
 
+    mean_coeffs = np.load(args.mean_coeffs[0])
     # reduce coefficients to just the ones needed for this sensor
     coeffs = coeffs[np.logical_and(coeffs['sensor']==sensor_name, coeffs['datatype']=='gac')]
 
@@ -197,23 +183,27 @@ def main():
 
     pigobs, pcgobs, pwgobs = calc_wic_prob_day_twi(coeffs, avhrr)
 
-    vis06 = avhrr.variables['vis06'][:]
-    vis09 = avhrr.variables['vis09'][:]
+    vis06 = avhrr.variables['vis06'][0,:,:]
+    vis09 = avhrr.variables['vis09'][0,:,:]
     lons = avhrr.variables['lon'][:]
     lats = avhrr.variables['lat'][:]
-    cloudmask = avhrr.variables['cloudmask'][:]
+    cloudmask = avhrr.variables['cloudmask'][0,:,:]
 
 
     soz = avhrr.variables['sunsatangles'][0,:,:]
     SOZ_LOWLIM = 0
-    SOZ_HIGHLIM = 70
+    SOZ_HIGHLIM =89
     SOZ = soz.astype(np.int16)
     coeff_indices = np.where((SOZ >= SOZ_LOWLIM) * (SOZ <= SOZ_HIGHLIM), SOZ, 0)
 
-    sic = compute_sic(vis06, pigobs, pwgobs, pcgobs, cloudmask, coeffs, coeff_indices, lons, lats, SOZ)
+    sic = compute_sic(vis09, pigobs, pwgobs, pcgobs, cloudmask, mean_coeffs, coeff_indices, lons, lats, SOZ)
 
     sic_filename = compose_filename(avhrr, sensor_name)
     output_path = os.path.join(args.output_dir[0], sic_filename)
+
+    extent_mask_file = args.extent_mask_file[0]
+    extent_mask = load_extent_mask(extent_mask_file)
+    sic = np.ma.array(sic, mask = (sic.mask == True) + (extent_mask == False))
 
     # Load OSI SAF landmask and apply to resampled SIC array
     land_mask_filepath = os.path.join(os.path.dirname(
@@ -223,6 +213,7 @@ def main():
 
     land_mask = get_osisaf_land_mask(land_mask_filepath)
     sic = apply_mask(land_mask, sic)
+
 
     save_sic(output_path,
                  sic,
@@ -250,7 +241,7 @@ def calc_wic_prob_day_twi(coeffs, avhrr):
     T11 = np.ma.array(avhrr.variables['tb11'][0,:,:], mask = avhrr.variables['tb11'][0,:,:] < 0)
     SOZ = avhrr.variables['sunsatangles'][0,:,:]
     SOZ_LOWLIM = 0
-    SOZ_HIGHLIM = 70
+    SOZ_HIGHLIM = 89
 
     # Turn the SOZ numbers into ints suitable for indexing (truncate float to int)
     SOZ = SOZ.astype(np.int16)
@@ -326,15 +317,15 @@ def calc_wic_prob_day_twi(coeffs, avhrr):
         ice_mean_ma = np.ma.array(cloud_mean, mask = ((SOZ.mask==True)+(SOZ.data > 70)))
         water_mean_ma = np.ma.array(sea_mean, mask = ((SOZ.mask==True)+(SOZ.data > 70)))
         soz_ma = np.ma.array(SOZ, mask = ((SOZ.mask==True)+(SOZ.data > 70)))
-        plt.clf();plt.imshow(np.ma.array(water_mean_ma)); plt.colorbar();plt.savefig('water_mean.png')
-        plt.clf();plt.imshow(np.ma.array(ice_mean, mask = ((SOZ.mask==True)+(SOZ.data > 70)))); plt.colorbar();plt.savefig('ice_mean.png')
-        plt.clf();plt.imshow(np.ma.array(SOZ, mask = ((SOZ.mask==True)+(SOZ.data > 70)))); plt.colorbar();plt.savefig('sozn.png')
-        plt.clf(); plt.plot(soz_ma.compressed(), ice_mean_ma.compressed());plt.savefig('soz-ice-plot.png')
-        plt.clf(); plt.plot(soz_ma.compressed(), water_mean_ma.compressed());plt.savefig('soz-sea-plot.png')
+        # plt.clf();plt.imshow(np.ma.array(water_mean_ma)); plt.colorbar();plt.savefig('water_mean.png')
+        # plt.clf();plt.imshow(np.ma.array(ice_mean, mask = ((SOZ.mask==True)+(SOZ.data > 70)))); plt.colorbar();plt.savefig('ice_mean.png')
+        # plt.clf();plt.imshow(np.ma.array(SOZ, mask = ((SOZ.mask==True)+(SOZ.data > 70)))); plt.colorbar();plt.savefig('sozn.png')
+        # plt.clf(); plt.plot(soz_ma.compressed(), ice_mean_ma.compressed());plt.savefig('soz-ice-plot.png')
+        # plt.clf(); plt.plot(soz_ma.compressed(), water_mean_ma.compressed());plt.savefig('soz-sea-plot.png')
 
 
-        slope, intercept, r_value, p_value, std_err = stats.linregress(soz_ma.compressed(), ice_mean_ma.compressed())
-        print slope, intercept, std_err
+        # slope, intercept, r_value, p_value, std_err = stats.linregress(soz_ma.compressed(), ice_mean_ma.compressed())
+        # print slope, intercept, std_err
 
         pVAR2gc = normalpdf(A06, cloud_mean, cloud_std)
         pVAR2gw = normalpdf(A06, sea_mean, sea_std)
