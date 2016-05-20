@@ -58,10 +58,15 @@ def compute_sic( data, pice, pwater, pclouds, cloudmask, coeffs, coeff_indices, 
     returns:
         sic (numpy.ndarray):    array with sea ice concentration values
     """
+    print "LATS", lats.shape
 
     # pick the pixels where the probability of ice is higher than other surface types
     only_ice_mask = (cloudmask == 4) * (soz.mask==False) * (soz < 89)
-    only_water_mask = ((pwater > pice + pclouds) * (cloudmask==1))
+
+
+    # The original gac data has glitches around pole, where big chunks of area are recognized as ice and cloud free.
+    # Since this cannot be, don't use mask in the areas over 82 North
+    only_water_mask = ((pwater > pice + pclouds) * (cloudmask==1) * (lats<83.5))
     only_ice_data = ma.array(data, mask = ~only_ice_mask)
 
     ice_mean = np.ma.array(coeffs[coeff_indices][:,:,1], mask = coeffs[coeff_indices][:,:,1]==0)
@@ -69,6 +74,7 @@ def compute_sic( data, pice, pwater, pclouds, cloudmask, coeffs, coeff_indices, 
     ice_std = np.where(ice_std >= ice_mean, ice_mean/3, ice_std)
     sic = 100*only_ice_data/(ice_mean - ice_std/2)
     sic = np.where(sic>100, 100, sic)
+
 
     sic_with_water = np.where(only_water_mask == True, 0, sic)
     sic = np.ma.array(np.where(only_ice_mask==True, sic, sic_with_water), mask = ~(only_ice_mask + only_water_mask))
@@ -185,8 +191,8 @@ def main():
 
     vis06 = avhrr.variables['vis06'][0,:,:]
     vis09 = avhrr.variables['vis09'][0,:,:]
-    lons = avhrr.variables['lon'][:]
-    lats = avhrr.variables['lat'][:]
+    lons = avhrr.variables['lon'][0,:,:]
+    lats = avhrr.variables['lat'][0,:,:]
     cloudmask = avhrr.variables['cloudmask'][0,:,:]
 
 
