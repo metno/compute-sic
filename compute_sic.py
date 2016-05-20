@@ -59,19 +59,24 @@ def compute_sic( data, pice, pwater, pclouds, cloudmask, coeffs, coeff_indices, 
         sic (numpy.ndarray):    array with sea ice concentration values
     """
 
+    sic_with_water = np.ma.array(np.zeros(cloudmask.shape), mask=cloudmask.mask)
     # pick the pixels where the probability of ice is higher than other surface types
     only_ice_mask = (cloudmask == 4) * (soz.mask==False) * (soz < 89)
-    only_water_mask = ((pwater > pice + pclouds) * (cloudmask==1))
+    # only_water_mask = (pwater > pice + pclouds) # * (cloudmask==1))
+    only_cloud_mask = (cloudmask == 2) + (cloudmask == 3)
     only_ice_data = ma.array(data, mask = ~only_ice_mask)
+    only_water_mask = (cloudmask != 4) * (cloudmask != 2) * (cloudmask !=3)
 
     ice_mean = np.ma.array(coeffs[coeff_indices][:,:,1], mask = coeffs[coeff_indices][:,:,1]==0)
     ice_std = coeffs[coeff_indices][:,:,2]
-    ice_std = np.where(ice_std >= ice_mean, ice_mean/3, ice_std)
+    ice_std = np.where(ice_std >= ice_mean, ice_mean/3, ice_std) # correct values that stand out too much
     sic = 100*only_ice_data/(ice_mean - ice_std/2)
     sic = np.where(sic>100, 100, sic)
+    sic = np.where(sic<5, 0, sic)
 
-    sic_with_water = np.where(only_water_mask == True, 0, sic)
-    sic = np.ma.array(np.where(only_ice_mask==True, sic, sic_with_water), mask = ~(only_ice_mask + only_water_mask))
+    # sic = np.ma.array(np.where(only_ice_mask==True, sic, sic_with_water), mask = ~only_ice_mask + only_cloud_mask)
+    # sic = np.ma.array(sic, mask = ~only_ice_mask + only_cloud_mask)
+    # sic = sic_with_water
 
     return sic
 
