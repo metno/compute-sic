@@ -150,6 +150,7 @@ def main():
     variables_dict['tb12'] = { 'name': 'Brightness temperature 12', 'data': avhrr.data[5], 'units': 'K' , 'dataset_res': None}
     variables_dict['vis16'] = { 'name': 'Reflectance 0.6', 'data': avhrr.data[6], 'units': '' , 'dataset_res': None}
     variables_dict['cloudmask'] = { 'name': 'Categorical cloudmask', 'data': cloudmask.data, 'units': '' , 'dataset_res': None}
+    variables_dict['quality_flag'] = { 'name': 'Quality', 'data': cloudmask.quality_flag_data, 'units': '' , 'dataset_res': None}
     variables_dict['sunsatangles'] = { 'name': 'Sun elevation angles', 'data': angles.data[1], 'units': 'degrees', 'dataset_res': None}
     variables_dict['lon'] = { 'name': 'Longitudes', 'data': avhrr.lon, 'units': 'degrees_east', 'dataset_res': None}
     variables_dict['lat'] = { 'name': 'Latitudes', 'data': avhrr.lat, 'units': 'degrees_north', 'dataset_res': None }
@@ -253,6 +254,8 @@ class CloudMaskData(object):
         filehandle = h5py.File(filename, 'r')
         self.data = filehandle['cloudmask'].value
         self.cloudmask_value_namelist = filehandle['cloudmask'].attrs['output_value_namelist']
+        self.quality_flag_data = filehandle['quality_flag'].value
+        self.quality_flags_namelist = filehandle['quality_flag'].attrs['output_value_namelist']
 
 
 if __name__ == '__main__':

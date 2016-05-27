@@ -27,6 +27,7 @@ import netCDF4
 import datetime
 
 from matplotlib import mlab
+from scipy import ndimage
 
 def load_extent_mask(filepath):
     '''
@@ -43,7 +44,29 @@ def solve(m1,m2,std1,std2):
     c  = m1**2 /(2*std1**2) - m2**2 / (2*std2**2) - np.log(std2/std1)
     return np.roots([a,b,c])
 
-def compute_sic( data, pice, pwater, pclouds, cloudmask, coeffs, coeff_indices, lons, lats, soz ):
+
+def clean_up_cloudmask(cloudmask, lats):
+    """ Clean up large chunks of errors in cloudmask
+
+    Return updated cloudmask
+
+    There appears to be big blocks of open water in the cloudmask around the pole
+    Which is clearly wrong.
+
+    Use scipy.ndimage to find large objects and remove them
+    Solution adopted from "http://www.scipy-lectures.org/advanced/image_processing"
+    """
+    mask = np.where(((cloudmask==1) * (lats>80))==True, True, False)
+    labels, nlabels = ndimage.label(mask)
+    sizes = ndimage.sum(mask, labels, range(nlabels + 1))
+    mask_sizes = sizes > 10
+    remove_pixels = mask_sizes[labels]
+    updated_cloudmask_data = np.where(remove_pixels==True, 0, cloudmask.data)
+
+    return np.ma.array(updated_cloudmask_data,  mask= cloudmask.mask)
+
+
+def compute_sic( data, cloudmask, coeffs, coeff_indices, lons, lats, soz ):
     """compute sea ice concentration
 
     use probability information to select tie points
@@ -52,8 +75,6 @@ def compute_sic( data, pice, pwater, pclouds, cloudmask, coeffs, coeff_indices, 
 
     args:
         data (numpy.ndarray):   observation array for computing sic
-        pice (numpy.ndarray):   probability of sea ice
-        pwater (numpy.ndarray): probability of water
 
     returns:
         sic (numpy.ndarray):    array with sea ice concentration values
@@ -61,22 +82,34 @@ def compute_sic( data, pice, pwater, pclouds, cloudmask, coeffs, coeff_indices, 
 
     sic_with_water = np.ma.array(np.zeros(cloudmask.shape), mask=cloudmask.mask)
     # pick the pixels where the probability of ice is higher than other surface types
-    only_ice_mask = (cloudmask == 4) * (soz.mask==False) * (soz < 89)
-    # only_water_mask = (pwater > pice + pclouds) # * (cloudmask==1))
-    only_cloud_mask = (cloudmask == 2) + (cloudmask == 3)
-    only_ice_data = ma.array(data, mask = ~only_ice_mask)
-    only_water_mask = (cloudmask != 4) * (cloudmask != 2) * (cloudmask !=3)
+
+    # don't use pixels that are: clouds contaminated (2)
+    #                            clouds filled (3)
+    #                            not processed (0)
+    #                            undefined (5)
+    #                            sun elevation angles above 90 degrees
+
+    # only_ice_mask = (cloudmask == 4) * (soz.mask==False) * (soz < 89)
+    # only_ice_data = ma.array(data, mask = ~only_ice_mask)
+    # only_water_mask = (cloudmask != 4) * (cloudmask != 2) * (cloudmask !=3)
 
     ice_mean = np.ma.array(coeffs[coeff_indices][:,:,1], mask = coeffs[coeff_indices][:,:,1]==0)
+    ice_mean = np.ma.fix_invalid(ice_mean)
     ice_std = coeffs[coeff_indices][:,:,2]
+    ice_std = np.ma.fix_invalid(ice_std)
     ice_std = np.where(ice_std >= ice_mean, ice_mean/3, ice_std) # correct values that stand out too much
-    sic = 100*only_ice_data/(ice_mean - ice_std/2)
-    sic = np.where(sic>100, 100, sic)
-    sic = np.where(sic<5, 0, sic)
+    water_threshold = 3 # reflectance of water is roughly 3 percent
 
-    # sic = np.ma.array(np.where(only_ice_mask==True, sic, sic_with_water), mask = ~only_ice_mask + only_cloud_mask)
-    # sic = np.ma.array(sic, mask = ~only_ice_mask + only_cloud_mask)
-    # sic = sic_with_water
+    mask = (cloudmask == 2) + (cloudmask == 3) + (cloudmask == 0) + (cloudmask == 5) + (soz > 89) + ( (data>3) * (data<ice_std/2))
+    water_mask = (cloudmask == 1) * (data < water_threshold + 2)
+
+
+    sic = 100*data/(ice_mean - ice_std/2)
+    sic = np.where(sic>100, 100, sic)
+    sic = np.where(data <= water_threshold, 0, sic)
+    sic = np.where(water_mask == True, 0, sic)
+
+    sic = np.ma.array(sic, mask = (cloudmask.mask + mask))
 
     return sic
 
@@ -172,13 +205,13 @@ def main():
 
     # Read in test coefficients file for daytime
     # coeffs_filename = 'coeffPDF_daytime_mean-std-line_v2p1.txt'
-    coeffs_filename = args.coeffs[0] # "./coeffPDF_daytime_mean-std-line_v2p2-misha.txt"
-    coeffs = read_coeffs_from_file(coeffs_filename)
+    # coeffs_filename = args.coeffs[0] # "./coeffPDF_daytime_mean-std-line_v2p2-misha.txt"
+    # coeffs = read_coeffs_from_file(coeffs_filename)
     sensor_name = args.sensor[0]
 
     mean_coeffs = np.load(args.mean_coeffs[0])
     # reduce coefficients to just the ones needed for this sensor
-    coeffs = coeffs[np.logical_and(coeffs['sensor']==sensor_name, coeffs['datatype']=='gac')]
+    # coeffs = coeffs[np.logical_and(coeffs['sensor']==sensor_name, coeffs['datatype']=='gac')]
 
     # Read in test AVHRR swath file, with lat/lon info (for trimming)
     avhrr_filepath = args.input_file[0]
@@ -186,12 +219,12 @@ def main():
     avhrr_basename = os.path.basename(avhrr_filepath)
     avhrr = netCDF4.Dataset(avhrr_filepath, locations=True)
 
-    pigobs, pcgobs, pwgobs = calc_wic_prob_day_twi(coeffs, avhrr)
+    # pigobs, pcgobs, pwgobs = calc_wic_prob_day_twi(coeffs, avhrr)
 
     vis06 = avhrr.variables['vis06'][0,:,:]
     vis09 = avhrr.variables['vis09'][0,:,:]
-    lons = avhrr.variables['lon'][:]
-    lats = avhrr.variables['lat'][:]
+    lons = avhrr.variables['lon'][0,:,:]
+    lats = avhrr.variables['lat'][0,:,:]
     cloudmask = avhrr.variables['cloudmask'][0,:,:]
 
 
@@ -201,7 +234,8 @@ def main():
     SOZ = soz.astype(np.int16)
     coeff_indices = np.where((SOZ >= SOZ_LOWLIM) * (SOZ <= SOZ_HIGHLIM), SOZ, 0)
 
-    sic = compute_sic(vis09, pigobs, pwgobs, pcgobs, cloudmask, mean_coeffs, coeff_indices, lons, lats, SOZ)
+    cloudmask = clean_up_cloudmask(cloudmask, lats)
+    sic = compute_sic(vis09, cloudmask, mean_coeffs, coeff_indices, lons, lats, SOZ)
 
     sic_filename = compose_filename(avhrr, sensor_name)
     output_path = os.path.join(args.output_dir[0], sic_filename)
