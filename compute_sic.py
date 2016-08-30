@@ -59,7 +59,7 @@ def clean_up_cloudmask(cloudmask, lats):
     mask = np.where(((cloudmask==1) * (lats>80))==True, True, False)
     labels, nlabels = ndimage.label(mask)
     sizes = ndimage.sum(mask, labels, range(nlabels + 1))
-    mask_sizes = sizes > 10
+    mask_sizes = sizes > 50
     remove_pixels = mask_sizes[labels]
     updated_cloudmask_data = np.where(remove_pixels==True, 0, cloudmask.data)
 

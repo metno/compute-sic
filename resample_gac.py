@@ -139,7 +139,7 @@ def main():
     cloudmask = CloudMaskData(cloudmask_filepath)
 
     swath_def = pr.geometry.SwathDefinition(lons=avhrr.lon, lats=avhrr.lat)
-    area_def = pr.utils.load_area(areas_filepath, 'nsidc_stere_north_10k')
+    area_def = pr.utils.load_area(areas_filepath, 'nsidc_stere_north_12k')
     (area_def.lons, area_def.lats) = area_def.get_lonlats()
 
     variables_dict = collections.OrderedDict()

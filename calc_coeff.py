@@ -83,7 +83,8 @@ def main():
     land_mask = load_land_mask(land_mask_file)
     extent_mask = load_extent_mask(extent_mask_file)
 
-    data_ma = np.array([]); angles_ma = np.array([])
+    data_ma = np.array([])
+    angles_ma = np.array([])
     for input_file in input_files:
         print input_file
         (data, angles, latitudes, cloudmask) = load_data(input_file, 'vis09')
@@ -92,16 +93,13 @@ def main():
         data_ma = np.append(data_ma, data_co); angles_ma = np.append(angles_ma, angles_co)
 
     coeffs = np.zeros((90,3))
-    for i in range(int(angles_ma.min()),int(angles_ma.max())):
+    # for i in range(int(angles_ma.min()),int(angles_ma.max())):
+    for i in range(int(angles_ma.min()), 89):
         refl = data_ma[angles_ma.astype(np.int)==i]
         coeffs[i,:] = ([i, refl.mean(), refl.std()])
 
     np.save(output_path, coeffs)
 
-    # idxs = np.where( (angles[0,:] >= angles_ma.min()) * (angles[0,:] <= angles_ma.max()), angles[0,:], 0).astype(np.int)
-    # plt.imshow(100*data[0,:]/(data[0,:] - coeffs[idxs][:,:,1] - coeffs[idxs][:,:,2]/2), vmin=-100, vmax=100)
-    # plt.colorbar()
-    # plt.show()
 
 if __name__ == "__main__":
     main()
