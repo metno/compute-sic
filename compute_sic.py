@@ -93,20 +93,39 @@ def compute_sic( data, cloudmask, coeffs, coeff_indices, lons, lats, soz ):
     # only_ice_data = ma.array(data, mask = ~only_ice_mask)
     # only_water_mask = (cloudmask != 4) * (cloudmask != 2) * (cloudmask !=3)
 
-    ice_mean = np.ma.array(coeffs[coeff_indices][:,:,1], mask = coeffs[coeff_indices][:,:,1]==0)
-    ice_mean = np.ma.fix_invalid(ice_mean)
-    ice_std = coeffs[coeff_indices][:,:,2]
-    ice_std = np.ma.fix_invalid(ice_std)
+    #ice_mean = np.ma.array(coeffs[coeff_indices][:,:,1], mask = coeffs[coeff_indices][:,:,1]==0)
+
+    #ice_mean = np.ma.fix_invalid(ice_mean)
+    #ice_std = coeffs[coeff_indices][:,:,2]
+    #ice_std = np.ma.fix_invalid(ice_std)
+    coeffs = np.ma.fix_invalid(coeffs)
+
+    z_mean = np.ma.polyfit(coeffs[20:-2,0], coeffs[20:-2,1],3)
+    f_mean = np.poly1d(z_mean)
+    ice_mean = np.ma.array(f_mean(soz), mask=soz.mask)
+
+    z_std = np.ma.polyfit(coeffs[20:-2,0], coeffs[20:-2,2],3)
+    f_std = np.poly1d(z_std)
+    ice_std = np.ma.array(f_std(soz), mask=soz.mask)
+
     ice_std = np.where(ice_std >= ice_mean, ice_mean/3, ice_std) # correct values that stand out too much
     water_threshold = 3 # reflectance of water is roughly 3 percent
+    ice_std = ice_mean/3
 
-    mask = (cloudmask == 2) + (cloudmask == 3) + (cloudmask == 0) + (cloudmask == 5) + (soz > 89) + ( (data>3) * (data<ice_std/2))
+    mask = (cloudmask == 2) + (cloudmask == 3) + (cloudmask == 0) + (cloudmask == 5) + (soz > 80)
     water_mask = (cloudmask == 1) * (data < water_threshold + 2)
 
+    sic = 100.*data/(ice_mean - ice_std/2)
 
-    sic = 100*data/(ice_mean - ice_std/2)
-    sic = np.where(sic>100, 100, sic)
-    sic = np.where(data <= water_threshold, 0, sic)
+    x = np.array([180, 160, 130, 105, 100,  90,  70,  50,  40,  20,   0])
+    y = np.array([110, 105,  95,  87,  82,  73,  65,  59,  45,  30,   0])
+
+    z = np.polyfit(x, y, 3); f=np.poly1d(z)
+    sic = f(sic)
+    sic = sic + 8 # correction based on comparison with fast ice
+
+    # sic = np.where(sic>100, 100, sic)
+    # sic = np.where(data <= water_threshold, 0, sic)
     sic = np.where(water_mask == True, 0, sic)
 
     sic = np.ma.array(sic, mask = (cloudmask.mask + mask))
@@ -133,23 +152,26 @@ def save_sic(output_filename, sic, timestamp, lon, lat):
     filehandle.createDimension('x', size=sic.shape[0])
     filehandle.createDimension('y', size=sic.shape[1])
 
-    filehandle.createVariable('lon', 'float', dimensions=( 'x', 'y'))
-    filehandle.createVariable('lat', 'float', dimensions=('x', 'y'))
-    filehandle.variables['lon'].units = 'degrees_east'
-    filehandle.variables['lat'].units = 'degrees_north'
-    filehandle.variables['lon'][:] = lon
-    filehandle.variables['lat'][:] = lat
-    filehandle.variables['lon'].missing_value = -32767
-    filehandle.variables['lon'].fill_value = -32767
-    filehandle.variables['lat'].missing_value = -32767
-    filehandle.variables['lat'].fill_value = -32767
+    # filehandle.createVariable('lon', 'float', dimensions=( 'x', 'y'))
+    # filehandle.createVariable('lat', 'float', dimensions=('x', 'y'))
+    # filehandle.variables['lon'].units = 'degrees_east'
+    # filehandle.variables['lat'].units = 'degrees_north'
+    # filehandle.variables['lon'][:] = lon
+    # filehandle.variables['lat'][:] = lat
+    # filehandle.variables['lon'].missing_value = -32767
+    # filehandle.variables['lon'].fill_value = -32767
+    # filehandle.variables['lat'].missing_value = -32767
+    # filehandle.variables['lat'].fill_value = -32767
 
-    filehandle.createVariable('ice_conc', 'f4', dimensions=('time', 'x', 'y'))
+    filehandle.createVariable('ice_conc', 'f4', dimensions=('time', 'x', 'y'), zlib=True,least_significant_digit=2)
     filehandle.variables['ice_conc'].coordinates = "lon lat"
     filehandle.variables['ice_conc'].units = "%"
     filehandle.variables['ice_conc'].missing_value = -32767
     filehandle.variables['ice_conc'].fill_value = -32767
+    filehandle.variables['ice_conc'].valid_min = 0.
+    filehandle.variables['ice_conc'].valid_max = 100.
     filehandle.variables['ice_conc'][:] = sic
+
 
 
     filehandle.close()
@@ -173,6 +195,7 @@ def apply_mask(mask_array, data_array):
     """
     # masked_data_array = np.ma.array(data_array.data, mask = data_array.mask + mask_array)
 
+    # masked_data_array = np.where(mask_array == True, 200, data_array)
     masked_data_array = np.where(mask_array == True, 200, data_array.data)
     original_mask = data_array.mask
 
@@ -235,20 +258,21 @@ def main():
     coeff_indices = np.where((SOZ >= SOZ_LOWLIM) * (SOZ <= SOZ_HIGHLIM), SOZ, 0)
 
     cloudmask = clean_up_cloudmask(cloudmask, lats)
-    sic = compute_sic(vis09, cloudmask, mean_coeffs, coeff_indices, lons, lats, SOZ)
+    sic = compute_sic(vis09, cloudmask, mean_coeffs, coeff_indices, lons, lats, soz)
 
     sic_filename = compose_filename(avhrr, sensor_name)
     output_path = os.path.join(args.output_dir[0], sic_filename)
 
     extent_mask_file = args.extent_mask_file[0]
     extent_mask = load_extent_mask(extent_mask_file)
-    sic = np.ma.array(sic, mask = (sic.mask == True) + (extent_mask == False))
+    # XXX: don't apply extent mask here, do it separately when you need it!
+    # sic = np.ma.array(sic, mask = (sic.mask == True) + (extent_mask == False))
 
     # Load OSI SAF landmask and apply to resampled SIC array
     land_mask_filepath = os.path.join(os.path.dirname(
                                       os.path.abspath(__file__)),
 		                              'resources',
-                                      'land_mask.npz')
+                                      'land_mask_4k.npz')
 
     land_mask = get_osisaf_land_mask(land_mask_filepath)
     sic = apply_mask(land_mask, sic)
