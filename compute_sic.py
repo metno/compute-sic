@@ -22,6 +22,7 @@ import matplotlib.cm as cm
 import sys
 from scipy import stats
 from pyresample import kd_tree
+import pyresample as pr
 
 import netCDF4
 import datetime
@@ -44,6 +45,28 @@ def solve(m1,m2,std1,std2):
     c  = m1**2 /(2*std1**2) - m2**2 / (2*std2**2) - np.log(std2/std1)
     return np.roots([a,b,c])
 
+def cleanup_coefficients(array):
+    """
+    Mask out zeros because we essentially have no data there
+    and mask out NaNs
+    """
+    array_fixed = np.ma.fix_invalid(array)
+    array_ma = np.ma.array(array, mask = array_fixed.mask + (array_fixed == 0))
+
+    angles = array_ma[:,0]
+    mean_c = array_ma[:,1]
+    mean_s = array_ma[:,2]
+    counts = array_ma[:,3]
+    weights = (counts-counts.min())/(counts.max()-counts.min())
+
+    mask = mean_c.mask + (mean_s>=mean_c)
+    angles_ma = angles[~mask]
+    mean_c_ma = mean_c[~mask]
+    mean_s_ma = mean_s[~mask]
+    counts_ma = counts[~mask]
+    weights_ma = weights[~mask]
+
+    return angles_ma, mean_c_ma, mean_s_ma, weights_ma
 
 def clean_up_cloudmask(cloudmask, lats):
     """ Clean up large chunks of errors in cloudmask
@@ -66,7 +89,7 @@ def clean_up_cloudmask(cloudmask, lats):
     return np.ma.array(updated_cloudmask_data,  mask= cloudmask.mask)
 
 
-def compute_sic( data, cloudmask, coeffs, coeff_indices, lons, lats, soz ):
+def compute_sic( data, tb11, cloudmask, coeffs, coeff_indices, lons, lats, soz ):
     """compute sea ice concentration
 
     use probability information to select tie points
@@ -93,42 +116,59 @@ def compute_sic( data, cloudmask, coeffs, coeff_indices, lons, lats, soz ):
     # only_ice_data = ma.array(data, mask = ~only_ice_mask)
     # only_water_mask = (cloudmask != 4) * (cloudmask != 2) * (cloudmask !=3)
 
-    #ice_mean = np.ma.array(coeffs[coeff_indices][:,:,1], mask = coeffs[coeff_indices][:,:,1]==0)
 
-    #ice_mean = np.ma.fix_invalid(ice_mean)
-    #ice_std = coeffs[coeff_indices][:,:,2]
-    #ice_std = np.ma.fix_invalid(ice_std)
-    coeffs = np.ma.fix_invalid(coeffs)
 
-    z_mean = np.ma.polyfit(coeffs[20:-2,0], coeffs[20:-2,1],3)
-    f_mean = np.poly1d(z_mean)
-    ice_mean = np.ma.array(f_mean(soz), mask=soz.mask)
+    # ice_mean = np.ma.array(coeffs[coeff_indices][:,:,1], mask = coeffs[coeff_indices][:,:,1]==0)
 
-    z_std = np.ma.polyfit(coeffs[20:-2,0], coeffs[20:-2,2],3)
-    f_std = np.poly1d(z_std)
-    ice_std = np.ma.array(f_std(soz), mask=soz.mask)
+    # ice_mean = np.ma.fix_invalid(ice_mean)
+    # ice_std = coeffs[coeff_indices][:,:,2]
+    # ice_std = np.ma.fix_invalid(ice_std)
 
-    ice_std = np.where(ice_std >= ice_mean, ice_mean/3, ice_std) # correct values that stand out too much
+
+    # z_mean = np.ma.polyfit(angles, mean_coeffs, 3)
+    # f_mean = np.poly1d(z_mean)
+    # ice_mean = np.ma.array(f_mean(soz), mask=soz.mask)
+
+    # z_std = np.ma.polyfit(angles, std_coeffs, 3)
+    # # z_std = np.array([-0.295, 25.92])
+    # f_std = np.poly1d(z_std)
+    # ice_std = np.ma.array(f_std(soz), mask=soz.mask)
+
+    #import ipdb; ipdb.set_trace()
+
+
+    # ice_std = np.where(ice_std >= ice_mean, ice_mean/3, ice_std) # correct values that stand out too much
+    # ice_std = ice_mean/3
+    angles, means, stds, weights = cleanup_coefficients(coeffs)
+
+
+    from scipy.interpolate import UnivariateSpline, interp1d
+    spline_means = UnivariateSpline(angles, means, w=weights)
+    spline_stds  = UnivariateSpline(angles, stds, w=weights)
+    ice_mean = np.ma.array(spline_means(soz.ravel()).reshape(soz.shape), mask = soz.mask)
+    ice_std = np.ma.array(spline_stds(soz.ravel()).reshape(soz.shape), mask = soz.mask)
+    # data= np.ma.array(data, mask = data.mask + (data>ice_mean+ice_std*2))
+
     water_threshold = 3 # reflectance of water is roughly 3 percent
-    ice_std = ice_mean/3
-
-    mask = (cloudmask == 2) + (cloudmask == 3) + (cloudmask == 0) + (cloudmask == 5) + (soz > 80)
-    water_mask = (cloudmask == 1) * (data < water_threshold + 2)
+    water_mask = (cloudmask == 1) * (data < (water_threshold + 1))
 
     sic = 100.*data/(ice_mean - ice_std/2)
 
     x = np.array([180, 160, 130, 105, 100,  90,  70,  50,  40,  20,   0])
-    y = np.array([110, 105,  95,  87,  82,  73,  65,  59,  45,  30,   0])
+    y = np.array([105, 103,  100,  98,  94,  85,  70,  59,  45,  30,   0])
 
     z = np.polyfit(x, y, 3); f=np.poly1d(z)
     sic = f(sic)
-    sic = sic + 8 # correction based on comparison with fast ice
+    # sic = sic + 8 # correction based on comparison with fast ice
 
     # sic = np.where(sic>100, 100, sic)
     # sic = np.where(data <= water_threshold, 0, sic)
-    sic = np.where(water_mask == True, 0, sic)
+    sic = np.where((water_mask == True), 0, sic)
 
-    sic = np.ma.array(sic, mask = (cloudmask.mask + mask))
+    mask = (cloudmask == 2) + (cloudmask == 3) + (cloudmask == 0) + (cloudmask == 5) + (soz > 80) +  (soz<40)  + ((tb11 >= 274.5) * (sic>0))
+    # mask = (cloudmask != 4) + (soz > 80) +  (soz<40)  + ((tb11 >= 274.5) * (sic>0))
+
+    sic = np.ma.array(sic, mask = (cloudmask.mask + mask + (data>60)))
 
     return sic
 
@@ -246,6 +286,7 @@ def main():
 
     vis06 = avhrr.variables['vis06'][0,:,:]
     vis09 = avhrr.variables['vis09'][0,:,:]
+    tb11  = avhrr.variables['tb11'][0,:,:]
     lons = avhrr.variables['lon'][0,:,:]
     lats = avhrr.variables['lat'][0,:,:]
     cloudmask = avhrr.variables['cloudmask'][0,:,:]
@@ -258,7 +299,7 @@ def main():
     coeff_indices = np.where((SOZ >= SOZ_LOWLIM) * (SOZ <= SOZ_HIGHLIM), SOZ, 0)
 
     cloudmask = clean_up_cloudmask(cloudmask, lats)
-    sic = compute_sic(vis09, cloudmask, mean_coeffs, coeff_indices, lons, lats, soz)
+    sic = compute_sic(vis09, tb11, cloudmask, mean_coeffs, coeff_indices, lons, lats, soz)
 
     sic_filename = compose_filename(avhrr, sensor_name)
     output_path = os.path.join(args.output_dir[0], sic_filename)
@@ -272,7 +313,7 @@ def main():
     land_mask_filepath = os.path.join(os.path.dirname(
                                       os.path.abspath(__file__)),
 		                              'resources',
-                                      'land_mask_4k.npz')
+                                      'land_mask_10k.npz')
 
     land_mask = get_osisaf_land_mask(land_mask_filepath)
     sic = apply_mask(land_mask, sic)
