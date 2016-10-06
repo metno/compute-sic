@@ -154,10 +154,10 @@ def compute_sic( data, tb11, cloudmask, coeffs, coeff_indices, lons, lats, soz )
 
     sic = 100.*data/(ice_mean - ice_std/2)
 
-    x = np.array([180, 160, 130, 105, 100,  90,  70,  50,  40,  20,   0])
-    y = np.array([105, 103,  100,  98,  94,  85,  70,  59,  45,  30,   0])
+    #x = np.array([180, 160, 130, 105, 100,  90,  70,  50,  40,  20,   0])
+    #y = np.array([105, 103,  100,  98,  94,  85,  70,  59,  45,  30,   0])
 
-    z = np.polyfit(x, y, 3); f=np.poly1d(z)
+    #z = np.polyfit(x, y, 3); f=np.poly1d(z)
     sic = f(sic)
     # sic = sic + 8 # correction based on comparison with fast ice
 
