@@ -8,6 +8,7 @@ import numpy as np
 import netCDF4 as nc
 from scipy import stats
 from matplotlib import pyplot as plt
+import pyresample as pr
 
 def load_data(input_filename, varname):
     """
@@ -70,12 +71,19 @@ def main():
     p.add_argument('-s', '--sensor', nargs=1,
                          help='Name of the sensor, e.g. avhrr_metop02',
                          type=str)
+    p.add_argument("-a", "--areas_file", nargs=1,
+                         help="Areas definition file")
 
     args = p.parse_args()
     output_dir = args.output_dir[0]
     input_files = args.input_files
     land_mask_file = args.land_mask[0]
     extent_mask_file = args.extent_mask[0]
+    areas_filepath = args.areas_file[0]
+
+    area_def = pr.utils.load_area(areas_filepath, 'nsidc_stere_north_10k')
+    (area_def.lons, area_def.lats) = area_def.get_lonlats()
+
 
     output_filename = '{}-coeffs'.format(args.sensor[0])
     output_path = os.path.join(output_dir, output_filename)
@@ -88,15 +96,20 @@ def main():
     for input_file in input_files:
         print input_file
         (data, angles, latitudes, cloudmask) = load_data(input_file, 'vis09')
-        mask = (extent_mask == True) * (cloudmask == 4)
+
+        # use only data within the extent and the surface type is 4 (sea ice)
+        mask = (extent_mask == True) * (cloudmask == 4) * (land_mask == False) * (area_def.lats > 85)
         data_co, angles_co = compress_data(data, angles, mask=mask)
         data_ma = np.append(data_ma, data_co); angles_ma = np.append(angles_ma, angles_co)
 
-    coeffs = np.zeros((90,3))
+    coeffs = np.zeros((90,4))
     # for i in range(int(angles_ma.min()),int(angles_ma.max())):
-    for i in range(int(angles_ma.min()), 89):
+    for i in range(int(angles_ma.min()), 90):
         refl = data_ma[angles_ma.astype(np.int)==i]
-        coeffs[i,:] = ([i, refl.mean(), refl.std()])
+        try:
+            coeffs[i,:] = ([i, np.median(refl), refl.std(), refl.shape[0]])
+        except:
+            coeffs[i,:] = (0,0,0,0)
 
     np.save(output_path, coeffs)
 
