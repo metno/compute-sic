@@ -95,7 +95,7 @@ def main():
     angles_ma = np.array([])
     for input_file in input_files:
         print input_file
-        (data, angles, latitudes, cloudmask) = load_data(input_file, 'vis09')
+        (data, angles, latitudes, cloudmask) = load_data(input_file, 'vis06')
 
         # use only data within the extent and the surface type is 4 (sea ice)
         mask = (extent_mask == True) * (cloudmask == 4) * (land_mask == False)
@@ -107,7 +107,7 @@ def main():
     for i in range(int(angles_ma.min()), 90):
         refl = data_ma[angles_ma.astype(np.int)==i]
         try:
-            coeffs[i,:] = ([i, np.median(refl), refl.std(), refl.shape[0]])
+            coeffs[i,:] = ([i, np.mean(refl), refl.std(), refl.shape[0]])
         except:
             coeffs[i,:] = (0,0,0,0)
 
