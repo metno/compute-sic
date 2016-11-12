@@ -160,18 +160,28 @@ def save_netcdf(output_path,
 
         idx_1 = idxs[i]
         idx_2 = idxs[i+1]
+        lons = lons[idx_1:idx_2,:]
+        lats = lats[idx_1:idx_2,:]
 
-        swath_def = pr.geometry.SwathDefinition(lons=lons[idx_1:idx_2,:], lats=lats[idx_1:idx_2,:])
+        mask = (lats>-90.) * (lats<90.)
+        if not mask.any():
+            break
+
+        lats_ma = lats[mask]
+        lons_ma = lons[mask]
+        swath_def = pr.geometry.SwathDefinition(lons=lons_ma, lats=lats_ma)
 
         valid_input_index, valid_output_index, index_array, distance_array = \
                                 kd_tree.get_neighbour_info(swath_def,
                                                           area_def, 15000,
-                                                           neighbours=1, nprocs=8)
+                                                           neighbours=1, nprocs=8,
+                                                           reduce_data=True)
 
         for dataset_name in variables.keys():
 
             if variables[dataset_name]['data'] is not None:
-                dataset = variables[dataset_name]['data'][idx_1:idx_2,:]
+                data_ma = variables[dataset_name]['data'][idx_1:idx_2,:][mask]
+                dataset = data_ma
                 dataset_res = kd_tree.get_sample_from_neighbour_info('nn',
                                                         area_def.shape, dataset.astype(np.float),
                                                         valid_input_index, valid_output_index,
@@ -246,7 +256,7 @@ def main():
     angles_filepath = os.path.join(avhrr_dirpath, angles_basename)
     angles = AngleData(angles_filepath)
 
-    cloudmask_basename = avhrr_basename.replace('avhrr', 'CMA')
+    cloudmask_basename = avhrr_basename.replace('avhrr', 'CT')
     cloudmask_filepath = os.path.join(avhrr_dirpath, cloudmask_basename)
     cloudmask = CloudMaskData(cloudmask_filepath)
 
@@ -255,8 +265,8 @@ def main():
     area_def = pr.utils.load_area(areas_filepath, 'nsidc_stere_north_10k')
     (area_def.lons, area_def.lats) = area_def.get_lonlats()
 
-    refl1 = avhrr.data[1]
-    refl2 = avhrr.data[2]
+    refl1 = avhrr.data[1] / np.cos(np.deg2rad(angles.data[1]))
+    refl2 = avhrr.data[2] / np.cos(np.deg2rad(angles.data[1]))
     #refl1 = calibrate_refl(angles.data[2], angles.data[1], avhrr.data[1], channel='ch1')
     #refl2 = calibrate_refl(angles.data[2], angles.data[1], avhrr.data[2], channel='ch2')
 
@@ -370,8 +380,8 @@ class CloudMaskData(object):
     """
     def __init__(self, filename):
         filehandle = h5py.File(filename, 'r')
-        self.data = filehandle['cma_extended'].value
-        self.cloudmask_value_namelist = filehandle['cma_extended'].attrs['flag_meanings']
+        self.data = filehandle['ct'].value
+        self.cloudmask_value_namelist = filehandle['ct'].attrs['flag_meanings']
 
 
 if __name__ == '__main__':
