@@ -229,6 +229,8 @@ def main():
                          help="Input Mitiff Files")
     p.add_argument("-a", "--areas_file", nargs=1,
                          help="Areas definition file")
+    p.add_argument("-n", "--area-name", nargs=1,
+                         help="Area definition name")
     p.add_argument('-s', '--sensor', nargs=1,
                          help='Name of the sensor, e.g. avhrr_metop02',
                          type=str)
@@ -239,6 +241,7 @@ def main():
     #                      type=str)
     args = p.parse_args()
     areas_filepath = args.areas_file[0]
+    area_name = args.area_name[0]
 
     ''' Test wic-classifier in python.'''
 
@@ -260,15 +263,17 @@ def main():
     cloudmask_filepath = os.path.join(avhrr_dirpath, cloudmask_basename)
     cloudmask = CloudMaskData(cloudmask_filepath)
 
+    cloudprob_basename = avhrr_basename.replace('avhrr', 'CMAprob')
+    cloudprob_filepath = os.path.join(avhrr_dirpath, cloudprob_basename)
+    print cloudprob_filepath
+    cloudprob = CloudProbabilityData(cloudprob_filepath)
 
-    # swath_def = pr.geometry.SwathDefinition(lons=avhrr.lon, lats=avhrr.lat)
-    area_def = pr.utils.load_area(areas_filepath, 'nsidc_stere_north_10k')
+    area_def = pr.utils.load_area(areas_filepath, area_name)
     (area_def.lons, area_def.lats) = area_def.get_lonlats()
 
+    # the reflectivity data is normalized by the solar zenith angle
     refl1 = avhrr.data[1] / np.cos(np.deg2rad(angles.data[1]))
     refl2 = avhrr.data[2] / np.cos(np.deg2rad(angles.data[1]))
-    #refl1 = calibrate_refl(angles.data[2], angles.data[1], avhrr.data[1], channel='ch1')
-    #refl2 = calibrate_refl(angles.data[2], angles.data[1], avhrr.data[2], channel='ch2')
 
     variables_dict = collections.OrderedDict()
     variables_dict['vis06'] = { 'name': 'Reflectance 0.6', 'data': refl1, 'units': '', 'dataset_res': None }
@@ -278,6 +283,7 @@ def main():
     variables_dict['tb12'] = { 'name': 'Brightness temperature 12', 'data': avhrr.data[5], 'units': 'K' , 'dataset_res': None}
     variables_dict['vis16'] = { 'name': 'Reflectance 0.6', 'data': avhrr.data[6], 'units': '' , 'dataset_res': None}
     variables_dict['cloudmask'] = { 'name': 'Categorical cloudmask', 'data': cloudmask.data, 'units': '' , 'dataset_res': None}
+    variables_dict['cloudprob'] = { 'name': 'SAFNWC PPS Cloud Mask Probabilities', 'data': cloudprob.data, 'units': '' , 'dataset_res': None}
     variables_dict['sunsatangles'] = { 'name': 'Sun elevation angles', 'data': angles.data[1], 'units': 'degrees', 'dataset_res': None}
     variables_dict['sensorangles'] = { 'name': 'Sensor zenith angles', 'data': angles.data[2], 'units': 'degrees', 'dataset_res': None}
     variables_dict['lon'] = { 'name': 'Longitudes', 'data': avhrr.lon, 'units': 'degrees_east', 'dataset_res': None}
@@ -383,6 +389,14 @@ class CloudMaskData(object):
         self.data = filehandle['ct'].value
         self.cloudmask_value_namelist = filehandle['ct'].attrs['flag_meanings']
 
+class CloudProbabilityData(object):
+    """
+    Read GAC AVHRR CLARA (comes from CM-SAF) cloud masking information
+
+    """
+    def __init__(self, filename):
+        filehandle = h5py.File(filename, 'r')
+        self.data = filehandle['cmaprob'].value
 
 if __name__ == '__main__':
     main()
