@@ -107,7 +107,7 @@ def main():
     for i in range(int(angles_ma.min()), 90):
         refl = data_ma[angles_ma.astype(np.int)==i]
         try:
-            coeffs[i,:] = ([i, np.mean(refl), refl.std(), refl.shape[0]])
+            coeffs[i,:] = ([i, np.percentile(refl, 95), refl.std(), refl.shape[0]])
         except:
             coeffs[i,:] = (0,0,0,0)
 
