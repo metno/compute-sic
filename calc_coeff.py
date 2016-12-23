@@ -98,7 +98,7 @@ def main():
         (data, angles, latitudes, cloudmask) = load_data(input_file, 'vis06')
 
         # use only data within the extent and the surface type is 4 (sea ice)
-        mask = (extent_mask == True) * (cloudmask == 4) * (land_mask == False)
+        mask = (extent_mask == True) * (cloudmask == 4) * (land_mask == False) * (latitudes > 85 )
         data_co, angles_co = compress_data(data, angles, mask=mask)
         data_ma = np.append(data_ma, data_co); angles_ma = np.append(angles_ma, angles_co)
 
